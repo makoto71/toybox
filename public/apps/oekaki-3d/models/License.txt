@@ -1,0 +1,68 @@
+	
+
+	Car Kit (3.1)
+
+	Created/distributed by Kenney (www.kenney.nl)
+	Creation date: 02-04-2026 14:03
+	
+			------------------------------
+
+	License: (Creative Commons Zero, CC0)
+	http://creativecommons.org/publicdomain/zero/1.0/
+
+	You can use this content for personal, educational, and commercial purposes.
+
+	Support by crediting 'Kenney' or 'www.kenney.nl' (this is not a requirement)
+
+			------------------------------
+
+	• Website : www.kenney.nl
+	• Donate  : www.kenney.nl/donate
+
+	• Patreon : patreon.com/kenney
+	
+	Follow on social media for updates:
+
+	• Twitter:	 twitter.com/KenneyNL
+	• BlueSky:	 kenney.bsky.social
+	• Instagram: instagram.com/kenney_nl
+
+
+			==============================
+			Additional models (Poly Pizza)
+			==============================
+
+	The following models were sourced from Poly Pizza (https://poly.pizza)
+	under Creative Commons Attribution (CC-BY) 3.0 / 4.0.
+
+	• bulldozer.glb
+	    "Bulldozer" by Poly by Google
+	    https://poly.pizza/m/eY1N7Rz9Drr (CC-BY)
+
+	• excavator.glb
+	    "Electric Miner" by MiniPoly
+	    https://poly.pizza/m/iIyE2f6pEk (CC-BY)
+
+	• dump-truck.glb
+	    "Dump truck" by jeremy
+	    https://poly.pizza/m/1BpGYg14QGD (CC-BY)
+
+	• schoolbus.glb
+	    "Schoolbus" by Poly by Google
+	    https://poly.pizza/m/8xacyNqdJ3t (CC-BY)
+
+	• police2.glb
+	    "Police car" by Poly by Google
+	    https://poly.pizza/m/BwwnUrWGmV (CC-BY)
+
+	• police3.glb
+	    "Police car" by Poly by Google
+	    https://poly.pizza/m/dmU0jwefJtM (CC-BY)
+
+	• suv.glb
+	    "SUV" by Poly by Google
+	    https://poly.pizza/m/xsMtZhBkxL (CC-BY)
+
+	• van.glb
+	    "Van" by Poly by Google
+	    https://poly.pizza/m/akcsFuPMt3b (CC-BY)

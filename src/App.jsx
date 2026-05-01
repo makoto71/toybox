@@ -15,6 +15,11 @@ function App() {
           <h2>おえかき</h2>
         </a>
 
+        <a href="/apps/oekaki-3d/index.html" className="app-card oekaki-3d-card">
+          <div className="app-icon">🧊</div>
+          <h2>3Dおえかき</h2>
+        </a>
+
         {/* 今後アプリが増えたらここに追加 */}
         <div className="app-card coming-soon">
           <div className="app-icon">?</div>

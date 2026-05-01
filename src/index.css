@@ -72,6 +72,14 @@ body {
   background-color: #FFF5E6;
 }
 
+.oekaki-3d-card {
+  border-color: var(--secondary-color);
+}
+
+.oekaki-3d-card:hover {
+  background-color: #E6F8F5;
+}
+
 .app-icon {
   font-size: 5rem;
   margin-bottom: 1rem;
