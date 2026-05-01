@@ -55,10 +55,6 @@
 	    "Police car" by Poly by Google
 	    https://poly.pizza/m/BwwnUrWGmV (CC-BY)
 
-	• police3.glb
-	    "Police car" by Poly by Google
-	    https://poly.pizza/m/dmU0jwefJtM (CC-BY)
-
 	• suv.glb
 	    "SUV" by Poly by Google
 	    https://poly.pizza/m/xsMtZhBkxL (CC-BY)

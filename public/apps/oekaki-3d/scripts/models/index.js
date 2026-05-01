@@ -32,7 +32,6 @@ export const modelRegistry = [
     car('dump', 'ダンプカー', 'dump-truck.glb', '🚛'),
     car('schoolbus', 'スクールバス', 'schoolbus.glb', '🚌'),
     car('police2', 'パトカー2', 'police2.glb', '🚓'),
-    car('police3', 'パトカー3', 'police3.glb', '🚓'),
     car('suv', 'SUV', 'suv.glb', '🚙'),
     car('van', 'バン', 'van.glb', '🚐'),
 ];
