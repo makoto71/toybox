@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>カメラAR - tomori</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <div class="camera-view">
+      <video id="camera-video" autoplay playsinline muted></video>
+      <canvas id="ar-canvas"></canvas>
+      <div class="loading-overlay" id="loading">読み込み中...</div>
+      <div class="error-message hidden" id="error-message"></div>
+    </div>
+    <div class="controls">
+      <button class="capture-btn" id="capture-btn" aria-label="撮影"></button>
+    </div>
+  </div>
+  <script type="module" src="scripts/app.js"></script>
+</body>
+</html>

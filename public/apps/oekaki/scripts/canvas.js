@@ -1,6 +1,6 @@
 /**
  * キャンバス管理モジュール
- * キャンバスの初期化、リサイズ、座標変換を担当する
+ * 背景・メイン・オーバーレイの3層キャンバスを初期化し、リサイズ・座標変換を担当する
  */
 
 // A4サイズ（300dpi 印刷品質）
@@ -8,9 +8,11 @@ const A4_WIDTH = 2480;   // 210mm @ 300dpi
 const A4_HEIGHT = 3508;  // 297mm @ 300dpi
 
 export class CanvasManager {
-    constructor(mainCanvas, overlayCanvas, container) {
+    constructor(bgCanvas, mainCanvas, overlayCanvas, container) {
+        this.bgCanvas = bgCanvas;
         this.mainCanvas = mainCanvas;
         this.overlayCanvas = overlayCanvas;
+        this.bgCtx = bgCanvas.getContext('2d');
         this.mainCtx = mainCanvas.getContext('2d');
         this.overlayCtx = overlayCanvas.getContext('2d');
         this.container = container;
@@ -20,6 +22,9 @@ export class CanvasManager {
         this.canvasHeight = 0;
         this.currentRotation = 0;
         this.isPortrait = true;
+
+        // 背景画像（画像 or 動画フレーム等）
+        this.backgroundImage = null;
     }
 
     /** キャンバスのリサイズと回転を処理する */
@@ -33,13 +38,13 @@ export class CanvasManager {
         if (this.canvasWidth === 0) {
             this.canvasWidth = A4_WIDTH;
             this.canvasHeight = A4_HEIGHT;
-            this.mainCanvas.width = this.canvasWidth;
-            this.mainCanvas.height = this.canvasHeight;
-            this.overlayCanvas.width = this.canvasWidth;
-            this.overlayCanvas.height = this.canvasHeight;
-
+            for (const c of [this.bgCanvas, this.mainCanvas, this.overlayCanvas]) {
+                c.width = this.canvasWidth;
+                c.height = this.canvasHeight;
+            }
             this._initContext(this.mainCtx);
             this._initContext(this.overlayCtx);
+            this._fillBackground();
         }
 
         // 向きの変更を検出
@@ -71,7 +76,7 @@ export class CanvasManager {
         const scaledWidth = this.canvasWidth * this.canvasScale;
         const scaledHeight = this.canvasHeight * this.canvasScale;
 
-        for (const canvas of [this.mainCanvas, this.overlayCanvas]) {
+        for (const canvas of [this.bgCanvas, this.mainCanvas, this.overlayCanvas]) {
             canvas.style.width = `${scaledWidth}px`;
             canvas.style.height = `${scaledHeight}px`;
 
@@ -110,18 +115,79 @@ export class CanvasManager {
         return [x, y];
     }
 
-    /** 描画を画像として保存する */
+    /**
+     * キャンバス座標を画面上のクライアント座標（CSSピクセル）に変換する
+     * @param {number} x
+     * @param {number} y
+     * @returns {[number, number]}
+     */
+    toScreenCoords(x, y) {
+        const rect = this.overlayCanvas.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        let relX = (x - this.canvasWidth / 2) * this.canvasScale;
+        let relY = (y - this.canvasHeight / 2) * this.canvasScale;
+
+        if (this.currentRotation === 90) {
+            const temp = relX;
+            relX = -relY;
+            relY = temp;
+        }
+
+        return [centerX + relX, centerY + relY];
+    }
+
+    /**
+     * 背景画像を設定する。
+     * @param {HTMLImageElement|HTMLCanvasElement|HTMLVideoElement|null} image - null で背景クリア
+     * @param {boolean} [mirror=false] - 左右反転で描画する（インカメラ用）
+     */
+    setBackground(image, mirror = false) {
+        this.backgroundImage = image;
+        this._fillBackground(mirror);
+    }
+
+    _fillBackground(mirror = false) {
+        const ctx = this.bgCtx;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
+
+        if (this.backgroundImage) {
+            const img = this.backgroundImage;
+            const iw = img.videoWidth || img.naturalWidth || img.width;
+            const ih = img.videoHeight || img.naturalHeight || img.height;
+            if (iw > 0 && ih > 0) {
+                // cover: キャンバス全体を覆うようスケール
+                const scale = Math.max(this.canvasWidth / iw, this.canvasHeight / ih);
+                const dw = iw * scale;
+                const dh = ih * scale;
+                const dx = (this.canvasWidth - dw) / 2;
+                const dy = (this.canvasHeight - dh) / 2;
+
+                if (mirror) {
+                    ctx.translate(this.canvasWidth, 0);
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(img, this.canvasWidth - dx - dw, dy, dw, dh);
+                } else {
+                    ctx.drawImage(img, dx, dy, dw, dh);
+                }
+            }
+        }
+        ctx.restore();
+    }
+
+    /** 描画を画像として保存する（背景 + 描画を合成） */
     saveAsImage() {
         const exportCanvas = document.createElement('canvas');
         exportCanvas.width = this.mainCanvas.width;
         exportCanvas.height = this.mainCanvas.height;
         const exportCtx = exportCanvas.getContext('2d');
 
-        // 白背景で塗りつぶし
-        exportCtx.fillStyle = '#FFFFFF';
-        exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-
-        // メインキャンバスの内容を描画
+        // 背景キャンバス（白 or 画像）
+        exportCtx.drawImage(this.bgCanvas, 0, 0);
+        // 描画キャンバス
         exportCtx.drawImage(this.mainCanvas, 0, 0);
 
         // Blobに変換してダウンロード

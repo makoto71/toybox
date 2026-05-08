@@ -20,6 +20,11 @@ function App() {
           <h2>3Dおえかき</h2>
         </a>
 
+        <a href="/apps/camera-ar/index.html" className="app-card camera-ar-card">
+          <div className="app-icon">📷</div>
+          <h2>カメラAR</h2>
+        </a>
+
         {/* 今後アプリが増えたらここに追加 */}
         <div className="app-card coming-soon">
           <div className="app-icon">?</div>
