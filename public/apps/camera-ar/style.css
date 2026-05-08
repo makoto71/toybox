@@ -1,0 +1,119 @@
+@import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700&display=swap');
+
+:root {
+  --bg-color: #1a1a2e;
+  --btn-size: 72px;
+  --btn-color: #ffffff;
+  --btn-shadow: rgba(0, 0, 0, 0.3);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg-color);
+  font-family: 'M PLUS Rounded 1c', sans-serif;
+}
+
+.app-container {
+  width: 100%;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.camera-view {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+#camera-video {
+  display: none;
+}
+
+#ar-canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-color);
+  color: #fff;
+  font-size: 1.2rem;
+  z-index: 10;
+}
+
+.loading-overlay.hidden {
+  display: none;
+}
+
+.error-message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-color);
+  color: #ff6b6b;
+  font-size: 1.1rem;
+  padding: 2rem;
+  text-align: center;
+  z-index: 10;
+}
+
+.error-message.hidden {
+  display: none;
+}
+
+.controls {
+  position: absolute;
+  bottom: 32px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  z-index: 20;
+}
+
+.capture-btn {
+  width: var(--btn-size);
+  height: var(--btn-size);
+  border-radius: 50%;
+  border: 4px solid var(--btn-color);
+  background: rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  transition: transform 0.1s, background 0.1s;
+  touch-action: manipulation;
+}
+
+.capture-btn:active {
+  transform: scale(0.9);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.capture-btn::after {
+  content: '';
+  display: block;
+  width: calc(var(--btn-size) - 20px);
+  height: calc(var(--btn-size) - 20px);
+  margin: 4px auto;
+  border-radius: 50%;
+  background: var(--btn-color);
+}

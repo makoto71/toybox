@@ -4,6 +4,7 @@ import { BaseBrush } from './BaseBrush.js';
  * ペンブラシ
  * 描画速度に応じて線幅が変わる。半透明でオーバーレイに描画し、
  * ストローク完了時にメインキャンバスへ転写する。
+ * 色は単色（文字列 or {type:'solid'}）または2色グラデーション（{type:'gradient'}）を受け付ける。
  */
 export class PenBrush extends BaseBrush {
     constructor() {
@@ -24,9 +25,22 @@ export class PenBrush extends BaseBrush {
     }
 
     applyStyle(ctx, opts) {
-        const targetWidth = super.applyStyle(ctx, opts);
-        ctx.strokeStyle = opts.color;
+        super.applyStyle(ctx, opts);
+        ctx.strokeStyle = this._resolveStrokeStyle(ctx, opts.color);
         return this.calcLineWidth(opts.baseSize, opts.velocity);
+    }
+
+    _resolveStrokeStyle(ctx, colorSpec) {
+        if (colorSpec && colorSpec.type === 'gradient') {
+            // キャンバス全体にかかるグラデーションを作成（左上→右下）
+            const g = ctx.createLinearGradient(0, 0, ctx.canvas.width, ctx.canvas.height);
+            g.addColorStop(0, colorSpec.colors[0]);
+            g.addColorStop(1, colorSpec.colors[1]);
+            return g;
+        }
+        if (typeof colorSpec === 'string') return colorSpec;
+        if (colorSpec && colorSpec.type === 'solid') return colorSpec.color;
+        return '#000';
     }
 
     getDrawContext(mainCtx, overlayCtx) {
