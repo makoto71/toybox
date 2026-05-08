@@ -22,6 +22,14 @@
       {
         "source": "/camera-ar/**",
         "destination": "/apps/camera-ar/**"
+      },
+      {
+        "source": "/oekaki-3d",
+        "destination": "/apps/oekaki-3d/index.html"
+      },
+      {
+        "source": "/oekaki-3d/**",
+        "destination": "/apps/oekaki-3d/**"
       }
     ]
   }
