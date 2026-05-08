@@ -52,9 +52,25 @@ export class Painter {
         this.paintPrev = null;              // 直前のヒット情報
         this.paintTool = null;              // beginStroke 時の tool 種別
 
+        // ドライブモード等で塗りを抑止する。false の間は 1本指=常に回転 として扱う。
+        this.paintEnabled = true;
+
         this._onDown = this._onDown.bind(this);
         this._onMove = this._onMove.bind(this);
         this._onUp = this._onUp.bind(this);
+    }
+
+    /** @param {boolean} enabled */
+    setPaintEnabled(enabled) {
+        this.paintEnabled = enabled;
+        if (!enabled) {
+            this._cancelPaintingIfActive();
+            this.gesture = 'idle';
+            this.activePainterId = null;
+            this.activeRotaterId = null;
+            this.pointers.clear();
+            this.pending = false;
+        }
     }
 
     bind() {
@@ -81,7 +97,8 @@ export class Painter {
 
         if (this.pointers.size === 1) {
             // 1本目: モデルヒット判定で描画/回転を決定
-            const hit = this.scene.raycast(e.clientX, e.clientY);
+            // (ドライブモード中は塗りを抑止し、常に回転)
+            const hit = this.paintEnabled ? this.scene.raycast(e.clientX, e.clientY) : null;
             if (hit) {
                 this._startPainting(p.id, hit);
             } else {

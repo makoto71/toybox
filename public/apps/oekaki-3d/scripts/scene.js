@@ -16,23 +16,30 @@ export class SceneManager {
         this.container = container;
 
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0xf0f4f8);
+        // 背景はステージ側のCSS(ドット模様)に任せるため透過
+        this.scene.background = null;
 
         this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
         this.camera.position.set(0, 0.5, 5);
 
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
+        this.renderer.setClearColor(0x000000, 0);
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+        // ドライブモードでの接地影用 (塗りモードでは castShadow なライトがないので影響なし)
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         container.appendChild(this.renderer.domElement);
 
         // Lights — キーライトでしっかり陰影を作りつつ、塗った色が暗くならない程度の補助
-        this.scene.add(new THREE.AmbientLight(0xffffff, 1.05));
-        const hemi = new THREE.HemisphereLight(0xffffff, 0xe2e7ee, 0.5);
-        this.scene.add(hemi);
-        const key = new THREE.DirectionalLight(0xffffff, 0.55);
-        key.position.set(3, 5, 4);
-        this.scene.add(key);
+        // ドライブモードからは強度を一時的に変えるので参照を保持
+        this.ambientLight = new THREE.AmbientLight(0xffffff, 1.05);
+        this.scene.add(this.ambientLight);
+        this.hemiLight = new THREE.HemisphereLight(0xffffff, 0xe2e7ee, 0.5);
+        this.scene.add(this.hemiLight);
+        this.keyLight = new THREE.DirectionalLight(0xffffff, 0.55);
+        this.keyLight.position.set(3, 5, 4);
+        this.scene.add(this.keyLight);
 
         // OrbitControls は target/min-max 距離の保管庫として残し、入力は自前で扱う
         // (InputController が一本指/二本指のジェスチャを判別するため)
@@ -46,6 +53,10 @@ export class SceneManager {
         this.raycaster = new THREE.Raycaster();
         this.pointerVec = new THREE.Vector2();
         this.currentModel = null;
+
+        /** @type {((dt:number) => void) | null} 毎フレーム呼ばれる外部フック (ドライブモード等) */
+        this.onUpdate = null;
+        this._lastTickTime = 0;
 
         this.resize();
         this._tick = this._tick.bind(this);
@@ -75,6 +86,7 @@ export class SceneManager {
      */
     _fitCameraToModel() {
         if (!this.currentModel) return;
+        if (this.cameraLocked) return; // ドライブモード等でカメラを外部管理中
         const box = new THREE.Box3().setFromObject(this.currentModel.mesh);
         if (box.isEmpty()) return;
         const size = new THREE.Vector3();
@@ -169,15 +181,38 @@ export class SceneManager {
         }
     }
 
-    /** レンダラーのcanvasをPNGとして取得 */
+    /** レンダラーのcanvasをPNGとして取得 (背景のドット模様も合成) */
     snapshotDataURL() {
         this.renderer.render(this.scene, this.camera);
-        return this.renderer.domElement.toDataURL('image/png');
+        const src = this.renderer.domElement;
+        const tmp = document.createElement('canvas');
+        tmp.width = src.width;
+        tmp.height = src.height;
+        const ctx = tmp.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        ctx.fillStyle = '#f0f4f8';
+        ctx.fillRect(0, 0, tmp.width, tmp.height);
+        const tile = 16 * dpr;
+        const r = 1.1 * dpr;
+        ctx.fillStyle = 'rgba(20, 40, 70, 0.10)';
+        for (let y = tile / 2; y < tmp.height; y += tile) {
+            for (let x = tile / 2; x < tmp.width; x += tile) {
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        ctx.drawImage(src, 0, 0);
+        return tmp.toDataURL('image/png');
     }
 
     _tick() {
         requestAnimationFrame(this._tick);
+        const now = performance.now();
+        const dt = this._lastTickTime ? Math.min(0.1, (now - this._lastTickTime) / 1000) : 0;
+        this._lastTickTime = now;
         this.controls.update();
+        if (this.onUpdate) this.onUpdate(dt);
         this.renderer.render(this.scene, this.camera);
     }
 }
