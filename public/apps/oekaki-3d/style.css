@@ -17,6 +17,7 @@ body {
     position: relative;
     height: 100vh;
     height: 100dvh;
+    height: var(--app-h, 100dvh);
     width: 100vw;
 }
 
@@ -25,7 +26,9 @@ body {
     inset: 1rem;
     border-radius: 24px;
     overflow: hidden;
-    background: white;
+    background-color: #f0f4f8;
+    background-image: radial-gradient(circle, rgba(20, 40, 70, 0.10) 1px, transparent 1.5px);
+    background-size: 16px 16px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
@@ -35,6 +38,41 @@ body {
     height: 100% !important;
     touch-action: none;
     cursor: crosshair;
+}
+
+/* ================ Drive mode ================ */
+.drive-exit {
+    position: absolute;
+    top: 1.25rem;
+    right: 1.25rem;
+    z-index: 1000;
+    padding: 0.6rem 1.1rem;
+    border: none;
+    border-radius: 999px;
+    background: white;
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    box-shadow: var(--btn-shadow);
+}
+.drive-exit:active {
+    transform: translateY(2px);
+    box-shadow: var(--btn-active-shadow);
+}
+
+body.drive-mode .menu-container,
+body.drive-mode .brush-trigger,
+body.drive-mode .color-trigger,
+body.drive-mode .size-slider-wrap {
+    display: none;
+}
+body.drive-mode .stage {
+    background-color: #ffffff;
+    background-image: none;
+}
+body.drive-mode .stage canvas {
+    cursor: grab;
 }
 
 /* ================ Top-left menu ================ */

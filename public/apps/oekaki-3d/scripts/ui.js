@@ -60,8 +60,16 @@ export class UI {
         this._setupSizeSlider();
         this._setupMenu();
         this._setupModelOverlay();
+        this._setupDriveExit();
         this._updateColorTriggerPreview();
         this._updateBrushTriggerPreview();
+    }
+
+    /** ドライブモード中は塗り系UIを隠して退出ボタンだけ出す */
+    setDriveMode(active) {
+        document.body.classList.toggle('drive-mode', active);
+        const exit = document.getElementById('drive-exit');
+        if (exit) exit.hidden = !active;
     }
 
     getState() {
@@ -133,6 +141,7 @@ export class UI {
 
         // マウス: クリック=単色 / ドラッグして別ボタンで離す=グラデーション
         grid.addEventListener('mousedown', (e) => this._onColorMouseDown(e));
+        window.addEventListener('mousemove', (e) => this._onColorMouseMove(e));
         window.addEventListener('mouseup', (e) => this._onColorMouseUp(e));
     }
 
@@ -189,6 +198,7 @@ export class UI {
                 newBtn.classList.add('hovering');
             }
             state.currentHoverBtn = newBtn;
+            if (newBtn) this._registerTouchedColor(newBtn.dataset.color);
         }
     }
 
@@ -217,7 +227,7 @@ export class UI {
             this._suppressColorClick = true;
             setTimeout(() => { this._suppressColorClick = false; }, 400);
             if (colors.length >= 2) {
-                this._applyColorSelection({ type: 'gradient', colors: [colors[0], colors[1]] });
+                this._applyColorSelection({ type: 'gradient', colors: [colors[0], colors[colors.length - 1]] });
             } else {
                 this._applyColorSelection({ type: 'solid', color: colors[0] });
             }
@@ -230,18 +240,26 @@ export class UI {
         if (this._suppressColorClick) return;
         const btn = e.target.closest('.color-btn');
         if (!btn) return;
-        this._mouseColorStart = { startColor: btn.dataset.color, startBtn: btn };
+        this._mouseColorStart = { startColor: btn.dataset.color, startBtn: btn, lastColor: btn.dataset.color };
         btn.classList.add('pressing');
+    }
+
+    _onColorMouseMove(e) {
+        const start = this._mouseColorStart;
+        if (!start) return;
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const btn = el && el.closest ? el.closest('.color-btn') : null;
+        if (!btn) return;
+        if (btn !== start.startBtn) btn.classList.add('hovering');
+        start.lastColor = btn.dataset.color;
     }
 
     _onColorMouseUp(e) {
         const start = this._mouseColorStart;
         if (!start) return;
         this._mouseColorStart = null;
-        const el = document.elementFromPoint(e.clientX, e.clientY);
-        const endBtn = el && el.closest ? el.closest('.color-btn') : null;
-        const spec = (endBtn && endBtn !== start.startBtn)
-            ? { type: 'gradient', colors: [start.startColor, endBtn.dataset.color] }
+        const spec = (start.lastColor && start.lastColor !== start.startColor)
+            ? { type: 'gradient', colors: [start.startColor, start.lastColor] }
             : { type: 'solid', color: start.startColor };
         this._clearColorBtnStates();
         this._applyColorSelection(spec);
@@ -322,6 +340,44 @@ export class UI {
         document.getElementById('menu-model').addEventListener('click', () => {
             dropdown.classList.remove('show');
             this._openOverlay('model-overlay');
+        });
+        document.getElementById('menu-drive').addEventListener('click', () => {
+            dropdown.classList.remove('show');
+            this.cb.onDriveToggle?.(true);
+        });
+        document.getElementById('menu-fullscreen').addEventListener('click', () => {
+            dropdown.classList.remove('show');
+            this._toggleFullscreen();
+        });
+
+        document.addEventListener('fullscreenchange', () => this._updateFullscreenLabel());
+        document.addEventListener('webkitfullscreenchange', () => this._updateFullscreenLabel());
+    }
+
+    _toggleFullscreen() {
+        const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+        if (fsEl) {
+            if (document.exitFullscreen) document.exitFullscreen();
+            else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        } else {
+            const root = document.documentElement;
+            if (root.requestFullscreen) root.requestFullscreen();
+            else if (root.webkitRequestFullscreen) root.webkitRequestFullscreen();
+        }
+    }
+
+    _updateFullscreenLabel() {
+        const item = document.getElementById('menu-fullscreen');
+        if (!item) return;
+        const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+        item.textContent = fsEl ? 'ぜんがめんをやめる' : 'ぜんがめん';
+    }
+
+    _setupDriveExit() {
+        const btn = document.getElementById('drive-exit');
+        if (!btn) return;
+        btn.addEventListener('click', () => {
+            this.cb.onDriveToggle?.(false);
         });
     }
 
