@@ -443,6 +443,55 @@ body.drive-mode .stage canvas {
     line-height: 1;
 }
 
+/* ================ Shape grid (in brush overlay, pattern tool) ================ */
+.shape-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+    width: 100%;
+    max-width: 24rem;
+    box-sizing: border-box;
+    padding: 0.2rem;
+}
+
+.shape-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    background: #f8f9fb;
+    border: 3px solid transparent;
+    border-radius: 14px;
+    padding: 0.7rem 0.3rem;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: #2F3542;
+    transition: all 0.15s;
+}
+
+.shape-card:hover {
+    background: #eef1f7;
+    transform: translateY(-2px);
+}
+
+.shape-card:active { transform: translateY(0); }
+
+.shape-card.active {
+    background: #e8f5e9;
+    border-color: #2ED573;
+}
+
+.shape-card-symbol {
+    font-size: 1.8rem;
+    line-height: 1;
+}
+
+.shape-card-label {
+    font-size: 0.75rem;
+}
+
 /* ================ Model grid ================ */
 .model-grid {
     display: grid;

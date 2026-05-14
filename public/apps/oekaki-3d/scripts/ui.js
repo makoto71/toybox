@@ -21,7 +21,15 @@ const DEFAULT_SIZE = 40;
 const BRUSH_ICONS = {
     pen: '✏️',
     spray: '💨',
+    pattern: '✦',
 };
+
+const PATTERN_SHAPES = [
+    { id: 'star',     label: 'ほし',   symbol: '★' },
+    { id: 'heart',    label: 'ハート',  symbol: '♥' },
+    { id: 'circle',   label: 'まる',   symbol: '●' },
+    { id: 'triangle', label: 'さんかく', symbol: '▲' },
+];
 
 const OVERLAY_ANIM_MS = 180;
 
@@ -41,6 +49,7 @@ export class UI {
             colorSpec: { type: 'solid', color: COLORS[0] },
             size: DEFAULT_SIZE,
             tool: 'pen',
+            patternShape: 'star',
             modelId: modelRegistry[0].id,
         };
         /** @type {Map<number, {startColor:string, startBtn:HTMLElement}>} */
@@ -77,6 +86,7 @@ export class UI {
             color: this.state.colorSpec,
             size: this.state.size,
             tool: this.state.tool,
+            patternShape: this.state.patternShape,
             modelId: this.state.modelId,
         };
     }
@@ -113,7 +123,12 @@ export class UI {
     _updateBrushTriggerPreview() {
         const inner = document.getElementById('brush-trigger-inner');
         if (!inner) return;
-        inner.textContent = BRUSH_ICONS[this.state.tool] ?? '✏️';
+        if (this.state.tool === 'pattern') {
+            const shape = PATTERN_SHAPES.find((s) => s.id === this.state.patternShape);
+            inner.textContent = shape ? shape.symbol : '✦';
+        } else {
+            inner.textContent = BRUSH_ICONS[this.state.tool] ?? '✏️';
+        }
     }
 
     // ---------- 色オーバーレイ ----------
@@ -286,8 +301,26 @@ export class UI {
         overlay.querySelectorAll('.brush-card').forEach((btn) => {
             btn.addEventListener('click', () => {
                 this._setTool(btn.dataset.brush);
+                // pattern ツール選択時はオーバーレイを閉じず形選択を表示
+                if (btn.dataset.brush !== 'pattern') {
+                    this._closeOverlay('brush-overlay');
+                }
+            });
+        });
+
+        // 形選択ボタン
+        const shapeGrid = document.getElementById('shape-grid');
+        PATTERN_SHAPES.forEach((s) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = `shape-card${s.id === this.state.patternShape ? ' active' : ''}`;
+            btn.dataset.shape = s.id;
+            btn.innerHTML = `<span class="shape-card-symbol">${s.symbol}</span><span class="shape-card-label">${s.label}</span>`;
+            btn.addEventListener('click', () => {
+                this._setPatternShape(s.id);
                 this._closeOverlay('brush-overlay');
             });
+            shapeGrid.appendChild(btn);
         });
     }
 
@@ -296,9 +329,20 @@ export class UI {
         document.querySelectorAll('.brush-card').forEach((b) => {
             b.classList.toggle('active', b.dataset.brush === tool);
         });
+        // もようパネルの表示切り替え
+        const patternPanel = document.getElementById('pattern-shape-panel');
+        if (patternPanel) patternPanel.hidden = tool !== 'pattern';
         this._updateColorTriggerPreview();
         this._updateBrushTriggerPreview();
         this.cb.onToolChange(tool);
+    }
+
+    _setPatternShape(shape) {
+        this.state.patternShape = shape;
+        document.querySelectorAll('.shape-card').forEach((b) => {
+            b.classList.toggle('active', b.dataset.shape === shape);
+        });
+        this._updateBrushTriggerPreview();
     }
 
     // ---------- サイズスライダー ----------
