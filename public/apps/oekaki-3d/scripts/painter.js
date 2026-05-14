@@ -16,7 +16,6 @@ const PEN_OPACITY = 0.6;
 const SPRAY_SIZE_MULT = 4;
 const PATTERN_INTERVAL_MULT = 1.4;
 const GLITTER_SIZE_MULT = 1.8;
-const RAINBOW_HUE_SPEED = 1.5; // 移動px あたりの色相変化 (度)
 
 // 2本指ジェスチャの分類しきい値
 const CLASSIFY_TIME_MS = 150;          // この時間が経つか…
@@ -54,7 +53,6 @@ export class Painter {
         this.paintPrev = null;
         this.paintTool = null;
         this._patternTravel = 0;   // もようブラシ用
-        this._rainbowHue = 0;      // にじブラシ用
 
         // ドライブモード等で塗りを抑止する。false の間は 1本指=常に回転 として扱う。
         this.paintEnabled = true;
@@ -282,7 +280,6 @@ export class Painter {
         this.paintTool = tool;
         this.paintPrev = null;
         this._patternTravel = 0;
-        this._rainbowHue = 0;
         model?.beginStroke?.({ tool });
         // pointerdown 時点でも 1ドット落としたいので即時描画
         if (model) {
@@ -337,10 +334,6 @@ export class Painter {
                 this._patternTravel = 0;
             }
             this.paintPrev = null;
-        } else if (tool === 'rainbow') {
-            this._rainbowHue = (this._rainbowHue + travel * RAINBOW_HUE_SPEED) % 360;
-            const rainbowColor = `hsl(${Math.round(this._rainbowHue)}, 100%, 55%)`;
-            this.paintPrev = model.paint(hit, this.paintPrev, rainbowColor, size, PEN_OPACITY);
         } else if (tool === 'glitter') {
             model.glitter(hit, color, size * GLITTER_SIZE_MULT);
             this.paintPrev = null;
