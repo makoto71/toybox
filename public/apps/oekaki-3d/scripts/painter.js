@@ -13,10 +13,10 @@
  */
 
 const PEN_OPACITY = 0.6;
-// スプレーは同じスライダー位置でも太めに散布する
 const SPRAY_SIZE_MULT = 4;
-// もようブラシ: シェイプ間隔 = ブラシサイズ × この係数
 const PATTERN_INTERVAL_MULT = 1.4;
+const GLITTER_SIZE_MULT = 1.8;
+const RAINBOW_HUE_SPEED = 1.5; // 移動px あたりの色相変化 (度)
 
 // 2本指ジェスチャの分類しきい値
 const CLASSIFY_TIME_MS = 150;          // この時間が経つか…
@@ -48,12 +48,13 @@ export class Painter {
         this.gesture = 'idle';
         this.pending = false;
 
-        this.activePainterId = null;        // 描画中の主指
-        this.activeRotaterId = null;        // 1本指回転中の主指
-        this.paintModel = null;             // beginStroke 済みモデル
-        this.paintPrev = null;              // 直前のヒット情報
-        this.paintTool = null;             // beginStroke 時の tool 種別
-        this._patternTravel = 0;           // もようブラシ: 前スタンプからの移動距離累積
+        this.activePainterId = null;
+        this.activeRotaterId = null;
+        this.paintModel = null;
+        this.paintPrev = null;
+        this.paintTool = null;
+        this._patternTravel = 0;   // もようブラシ用
+        this._rainbowHue = 0;      // にじブラシ用
 
         // ドライブモード等で塗りを抑止する。false の間は 1本指=常に回転 として扱う。
         this.paintEnabled = true;
@@ -281,6 +282,7 @@ export class Painter {
         this.paintTool = tool;
         this.paintPrev = null;
         this._patternTravel = 0;
+        this._rainbowHue = 0;
         model?.beginStroke?.({ tool });
         // pointerdown 時点でも 1ドット落としたいので即時描画
         if (model) {
@@ -322,20 +324,30 @@ export class Painter {
             return;
         }
         const { color, size, tool, patternShape } = this.getState();
+        const travel = prevClientX != null ? Math.hypot(clientX - prevClientX, clientY - prevClientY) : 0;
+
         if (tool === 'spray') {
             model.spray(hit, color, size * SPRAY_SIZE_MULT);
             this.paintPrev = null;
         } else if (tool === 'pattern') {
-            // 移動距離を積算し、interval ごとにシェイプをスタンプ
-            const dx = prevClientX != null ? clientX - prevClientX : 0;
-            const dy = prevClientY != null ? clientY - prevClientY : 0;
-            this._patternTravel += Math.hypot(dx, dy);
+            this._patternTravel += travel;
             const interval = size * PATTERN_INTERVAL_MULT;
-            if (this._patternTravel >= interval || (prevClientX == null)) {
+            if (this._patternTravel >= interval || prevClientX == null) {
                 model.stampShape(hit, color, size, patternShape ?? 'star', PEN_OPACITY);
                 this._patternTravel = 0;
             }
             this.paintPrev = null;
+        } else if (tool === 'rainbow') {
+            this._rainbowHue = (this._rainbowHue + travel * RAINBOW_HUE_SPEED) % 360;
+            const rainbowColor = `hsl(${Math.round(this._rainbowHue)}, 100%, 55%)`;
+            this.paintPrev = model.paint(hit, this.paintPrev, rainbowColor, size, PEN_OPACITY);
+        } else if (tool === 'glitter') {
+            model.glitter(hit, color, size * GLITTER_SIZE_MULT);
+            this.paintPrev = null;
+        } else if (tool === 'bristle') {
+            this.paintPrev = model.bristle(hit, this.paintPrev, color, size, PEN_OPACITY);
+        } else if (tool === 'grass') {
+            this.paintPrev = model.grass(hit, this.paintPrev, color, size, PEN_OPACITY);
         } else {
             this.paintPrev = model.paint(hit, this.paintPrev, color, size, PEN_OPACITY);
         }

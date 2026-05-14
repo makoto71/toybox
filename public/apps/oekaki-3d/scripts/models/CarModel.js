@@ -22,6 +22,9 @@ import {
     paintOnSurface,
     sprayOnSurface,
     stampShapeOnSurface,
+    glitterOnSurface,
+    bristleOnSurface,
+    grassOnSurface,
     commitStroke,
     clearSurface,
     disposeSurface,
@@ -330,6 +333,45 @@ export class CarModel {
         const w = ps.baseCanvas.width;
         const h = ps.baseCanvas.height;
         sprayOnSurface(ps, uv.x * w, (1 - uv.y) * h, color, sizePx);
+    }
+
+    glitter(intersection, color, sizePx) {
+        const surface = this._surfaces.find((s) => s.mesh === intersection.object);
+        if (!surface) return;
+        const uv = intersection.uv;
+        if (!uv) return;
+        const ps = surface.paintSurface;
+        glitterOnSurface(ps, uv.x * ps.baseCanvas.width, (1 - uv.y) * ps.baseCanvas.height, color, sizePx);
+    }
+
+    bristle(intersection, prev, color, sizePx, opacity = 1) {
+        const surface = this._surfaces.find((s) => s.mesh === intersection.object);
+        if (!surface) return null;
+        const uv = intersection.uv;
+        if (!uv) return prev ?? null;
+        const ps = surface.paintSurface;
+        const w = ps.baseCanvas.width;
+        const h = ps.baseCanvas.height;
+        const x = uv.x * w;
+        const y = (1 - uv.y) * h;
+        const chartId = surface.triToChart[intersection.faceIndex];
+        const sameChart = prev && prev.mesh === surface.mesh && prev.chartId === chartId;
+        const prevPx = sameChart ? { x: prev.uv.x * w, y: (1 - prev.uv.y) * h } : null;
+        bristleOnSurface(ps, prevPx, { x, y }, color, sizePx, opacity);
+        return { mesh: surface.mesh, chartId, uv: { x: uv.x, y: uv.y } };
+    }
+
+    grass(intersection, prev, color, sizePx, opacity = 1) {
+        const surface = this._surfaces.find((s) => s.mesh === intersection.object);
+        if (!surface) return null;
+        const uv = intersection.uv;
+        if (!uv) return prev ?? null;
+        const ps = surface.paintSurface;
+        const w = ps.baseCanvas.width;
+        const h = ps.baseCanvas.height;
+        grassOnSurface(ps, { x: uv.x * w, y: (1 - uv.y) * h }, color, sizePx, opacity);
+        const chartId = surface.triToChart[intersection.faceIndex];
+        return { mesh: surface.mesh, chartId, uv: { x: uv.x, y: uv.y } };
     }
 
     stampShape(intersection, color, sizePx, shape, opacity = 1) {

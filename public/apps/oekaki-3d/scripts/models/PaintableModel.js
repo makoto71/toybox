@@ -298,6 +298,146 @@ function _drawShapePath(ctx, cx, cy, r, shape) {
     }
 }
 
+/**
+ * きらきら: 選択色と白を混ぜた輝点をランダムに散らす。
+ */
+function glitterOnSurface(surface, cx, cy, colorSpec, sizePx) {
+    const ctx = surface.strokeCtx;
+    const w = surface.baseCanvas.width;
+    const h = surface.baseCanvas.height;
+    const radius = Math.max(4, sizePx / 2);
+    const rgb = sampleColorRgb(colorSpec, cx, cy, w, h);
+    const count = Math.max(8, Math.floor(radius * 0.7));
+
+    for (let i = 0; i < count; i++) {
+        const r = Math.sqrt(Math.random()) * radius * 1.3;
+        const theta = Math.random() * Math.PI * 2;
+        const px = cx + Math.cos(theta) * r;
+        const py = cy + Math.sin(theta) * r;
+        const dotR = 0.6 + Math.random() * 2.2;
+        const alpha = 0.35 + Math.random() * 0.6;
+        const mix = Math.random() * 0.6;
+        const rr = Math.round(rgb[0] + (255 - rgb[0]) * mix);
+        const gg = Math.round(rgb[1] + (255 - rgb[1]) * mix);
+        const bb = Math.round(rgb[2] + (255 - rgb[2]) * mix);
+        ctx.fillStyle = `rgba(${rr},${gg},${bb},${alpha})`;
+        ctx.beginPath();
+        ctx.arc(px, py, dotR, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    surface.hasStroke = true;
+    surface.strokeOpacity = 1;
+
+    const pad = radius * 1.4 + 3;
+    refreshDisplay(surface,
+        Math.max(0, Math.floor(cx - pad)),
+        Math.max(0, Math.floor(cy - pad)),
+        Math.min(w, Math.ceil(cx + pad)) - Math.max(0, Math.floor(cx - pad)),
+        Math.min(h, Math.ceil(cy + pad)) - Math.max(0, Math.floor(cy - pad)),
+    );
+}
+
+/**
+ * はけ: ストローク方向に対して垂直に bristleCount 本の細線を描く。
+ */
+function bristleOnSurface(surface, prevPx, currPx, colorSpec, sizePx, opacity) {
+    const ctx = surface.strokeCtx;
+    const style = resolveStyle(ctx, colorSpec);
+    const halfWidth = sizePx / 2;
+
+    let perpX = 1, perpY = 0;
+    if (prevPx) {
+        const ddx = currPx.x - prevPx.x;
+        const ddy = currPx.y - prevPx.y;
+        const len = Math.hypot(ddx, ddy);
+        if (len > 0.5) { perpX = -ddy / len; perpY = ddx / len; }
+    }
+
+    const bristleCount = 14;
+    for (let i = 0; i < bristleCount; i++) {
+        const t = (i / (bristleCount - 1) - 0.5) * 2;
+        const offset = t * halfWidth + (Math.random() - 0.5) * sizePx * 0.12;
+        const ox = perpX * offset;
+        const oy = perpY * offset;
+
+        ctx.strokeStyle = style;
+        ctx.globalAlpha = 0.3 + Math.random() * 0.5;
+        ctx.lineWidth = 0.8 + Math.random() * 1.4;
+        ctx.lineCap = 'round';
+
+        ctx.beginPath();
+        if (prevPx) {
+            ctx.moveTo(prevPx.x + ox, prevPx.y + oy);
+            ctx.lineTo(currPx.x + ox, currPx.y + oy);
+        } else {
+            ctx.arc(currPx.x + ox, currPx.y + oy, ctx.lineWidth / 2, 0, Math.PI * 2);
+        }
+        ctx.stroke();
+    }
+    ctx.globalAlpha = 1.0;
+
+    surface.hasStroke = true;
+    surface.strokeOpacity = opacity;
+
+    const w = surface.baseCanvas.width;
+    const h = surface.baseCanvas.height;
+    const pad = halfWidth + 2;
+    const minX = prevPx ? Math.min(prevPx.x, currPx.x) : currPx.x;
+    const maxX = prevPx ? Math.max(prevPx.x, currPx.x) : currPx.x;
+    const minY = prevPx ? Math.min(prevPx.y, currPx.y) : currPx.y;
+    const maxY = prevPx ? Math.max(prevPx.y, currPx.y) : currPx.y;
+    refreshDisplay(surface,
+        Math.max(0, Math.floor(minX - pad)),
+        Math.max(0, Math.floor(minY - pad)),
+        Math.min(w, Math.ceil(maxX + pad)) - Math.max(0, Math.floor(minX - pad)),
+        Math.min(h, Math.ceil(maxY + pad)) - Math.max(0, Math.floor(minY - pad)),
+    );
+}
+
+/**
+ * くさ: 中心から放射状に短い線を描く。
+ */
+function grassOnSurface(surface, currPx, colorSpec, sizePx, opacity) {
+    const ctx = surface.strokeCtx;
+    const style = resolveStyle(ctx, colorSpec);
+    const radius = sizePx / 2;
+    const strandCount = Math.max(5, Math.floor(radius * 0.45));
+
+    ctx.strokeStyle = style;
+    ctx.lineCap = 'round';
+
+    for (let i = 0; i < strandCount; i++) {
+        const rootAngle = Math.random() * Math.PI * 2;
+        const rootDist = Math.sqrt(Math.random()) * radius * 0.4;
+        const rx = currPx.x + Math.cos(rootAngle) * rootDist;
+        const ry = currPx.y + Math.sin(rootAngle) * rootDist;
+        const tipAngle = rootAngle + (Math.random() - 0.5) * 0.6;
+        const strandLen = (radius - rootDist) * (0.5 + Math.random() * 0.6) + radius * 0.2;
+
+        ctx.globalAlpha = 0.5 + Math.random() * 0.4;
+        ctx.lineWidth = 0.8 + Math.random() * 1.0;
+        ctx.beginPath();
+        ctx.moveTo(rx, ry);
+        ctx.lineTo(rx + Math.cos(tipAngle) * strandLen, ry + Math.sin(tipAngle) * strandLen);
+        ctx.stroke();
+    }
+    ctx.globalAlpha = 1.0;
+
+    surface.hasStroke = true;
+    surface.strokeOpacity = opacity;
+
+    const w = surface.baseCanvas.width;
+    const h = surface.baseCanvas.height;
+    const pad = radius + 2;
+    refreshDisplay(surface,
+        Math.max(0, Math.floor(currPx.x - pad)),
+        Math.max(0, Math.floor(currPx.y - pad)),
+        Math.min(w, Math.ceil(currPx.x + pad)) - Math.max(0, Math.floor(currPx.x - pad)),
+        Math.min(h, Math.ceil(currPx.y + pad)) - Math.max(0, Math.floor(currPx.y - pad)),
+    );
+}
+
 function commitStroke(surface) {
     if (!surface.hasStroke) return;
     surface.baseCtx.globalAlpha = surface.strokeOpacity;
@@ -328,7 +468,7 @@ function disposeSurface(surface) {
     surface.material.dispose();
 }
 
-export { createPaintSurface, paintOnSurface, sprayOnSurface, stampShapeOnSurface, commitStroke, clearSurface, disposeSurface, STROKE_OPACITY };
+export { createPaintSurface, paintOnSurface, sprayOnSurface, stampShapeOnSurface, glitterOnSurface, bristleOnSurface, grassOnSurface, commitStroke, clearSurface, disposeSurface, STROKE_OPACITY };
 
 export class PaintableModel {
     /**
@@ -421,6 +561,45 @@ export class PaintableModel {
         const w = surface.baseCanvas.width;
         const h = surface.baseCanvas.height;
         sprayOnSurface(surface, uv.x * w, (1 - uv.y) * h, color, sizePx);
+    }
+
+    glitter(intersection, color, sizePx) {
+        const surfaceIndex = this.surfaceIndexFor(intersection);
+        const surface = this.surfaces[surfaceIndex];
+        const uv = intersection.uv;
+        if (!uv) return;
+        const w = surface.baseCanvas.width;
+        const h = surface.baseCanvas.height;
+        glitterOnSurface(surface, uv.x * w, (1 - uv.y) * h, color, sizePx);
+    }
+
+    bristle(intersection, prev, color, sizePx, opacity = 1) {
+        const surfaceIndex = this.surfaceIndexFor(intersection);
+        const surface = this.surfaces[surfaceIndex];
+        const uv = intersection.uv;
+        if (!uv) return prev ?? null;
+        const w = surface.baseCanvas.width;
+        const h = surface.baseCanvas.height;
+        const x = uv.x * w;
+        const y = (1 - uv.y) * h;
+        const sameSurface = prev && prev.surfaceIndex === surfaceIndex;
+        const dx = sameSurface ? Math.abs(uv.x - prev.uv.x) : 1;
+        const dy = sameSurface ? Math.abs(uv.y - prev.uv.y) : 1;
+        const connect = sameSurface && dx < 0.4 && dy < 0.4;
+        const prevPx = connect ? { x: prev.uv.x * w, y: (1 - prev.uv.y) * h } : null;
+        bristleOnSurface(surface, prevPx, { x, y }, color, sizePx, opacity);
+        return { surfaceIndex, uv: { x: uv.x, y: uv.y } };
+    }
+
+    grass(intersection, prev, color, sizePx, opacity = 1) {
+        const surfaceIndex = this.surfaceIndexFor(intersection);
+        const surface = this.surfaces[surfaceIndex];
+        const uv = intersection.uv;
+        if (!uv) return prev ?? null;
+        const w = surface.baseCanvas.width;
+        const h = surface.baseCanvas.height;
+        grassOnSurface(surface, { x: uv.x * w, y: (1 - uv.y) * h }, color, sizePx, opacity);
+        return { surfaceIndex, uv: { x: uv.x, y: uv.y } };
     }
 
     /**

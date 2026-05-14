@@ -401,10 +401,10 @@ body.drive-mode .stage canvas {
 /* ================ Brush grid (in brush overlay) ================ */
 .brush-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.7rem;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
     width: 100%;
-    max-width: 24rem;
+    max-width: 26rem;
     box-sizing: border-box;
     padding: 0.3rem;
 }
@@ -413,11 +413,11 @@ body.drive-mode .stage canvas {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.3rem;
     background: #f8f9fb;
     border: 3px solid transparent;
-    border-radius: 18px;
-    padding: 1rem 0.5rem;
+    border-radius: 14px;
+    padding: 0.7rem 0.3rem;
     cursor: pointer;
     font-family: inherit;
     font-weight: 700;
