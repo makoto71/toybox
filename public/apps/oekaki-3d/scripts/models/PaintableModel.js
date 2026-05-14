@@ -226,6 +226,78 @@ function sprayOnSurface(surface, cx, cy, colorSpec, sizePx) {
     refreshDisplay(surface, dx0, dy0, dx1 - dx0, dy1 - dy0);
 }
 
+/**
+ * シェイプをストロークキャンバスに 1つ描く。
+ * 塗りは resolveStyle と同じカラースペックを受け取る。
+ * opacity は strokeOpacity として扱い、endStroke 時に base に合成される。
+ */
+function stampShapeOnSurface(surface, cx, cy, shape, colorSpec, sizePx, opacity) {
+    const r = sizePx / 2;
+    const ctx = surface.strokeCtx;
+    const style = resolveStyle(ctx, colorSpec);
+    ctx.fillStyle = style;
+    ctx.beginPath();
+    _drawShapePath(ctx, cx, cy, r, shape);
+    ctx.fill();
+
+    surface.hasStroke = true;
+    surface.strokeOpacity = opacity;
+
+    const pad = r + 2;
+    const w = surface.baseCanvas.width;
+    const h = surface.baseCanvas.height;
+    refreshDisplay(
+        surface,
+        Math.max(0, Math.floor(cx - pad)),
+        Math.max(0, Math.floor(cy - pad)),
+        Math.min(w, Math.ceil(cx + pad)) - Math.max(0, Math.floor(cx - pad)),
+        Math.min(h, Math.ceil(cy + pad)) - Math.max(0, Math.floor(cy - pad)),
+    );
+}
+
+/** cx,cy を中心に半径 r のシェイプパスを作る (fill は呼び出し側) */
+function _drawShapePath(ctx, cx, cy, r, shape) {
+    switch (shape) {
+        case 'circle':
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            break;
+        case 'triangle': {
+            // 上向き正三角形
+            const h = r * Math.sqrt(3);
+            ctx.moveTo(cx,            cy - r * 2 / Math.sqrt(3));
+            ctx.lineTo(cx + r,        cy + h / Math.sqrt(3) / Math.sqrt(3));
+            ctx.lineTo(cx - r,        cy + h / Math.sqrt(3) / Math.sqrt(3));
+            ctx.closePath();
+            break;
+        }
+        case 'star': {
+            const outer = r;
+            const inner = r * 0.4;
+            const points = 5;
+            for (let i = 0; i < points * 2; i++) {
+                const angle = (Math.PI / points) * i - Math.PI / 2;
+                const rad   = i % 2 === 0 ? outer : inner;
+                const x = cx + Math.cos(angle) * rad;
+                const y = cy + Math.sin(angle) * rad;
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            break;
+        }
+        case 'heart': {
+            // 数式ハート (キュービック曲線)
+            const s = r * 0.9;
+            ctx.moveTo(cx, cy + s * 0.8);
+            ctx.bezierCurveTo(cx - s * 2, cy - s * 0.5, cx - s * 2, cy - s * 1.8, cx, cy - s * 0.5);
+            ctx.bezierCurveTo(cx + s * 2, cy - s * 1.8, cx + s * 2, cy - s * 0.5, cx, cy + s * 0.8);
+            ctx.closePath();
+            break;
+        }
+        default:
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    }
+}
+
 function commitStroke(surface) {
     if (!surface.hasStroke) return;
     surface.baseCtx.globalAlpha = surface.strokeOpacity;
@@ -256,7 +328,7 @@ function disposeSurface(surface) {
     surface.material.dispose();
 }
 
-export { createPaintSurface, paintOnSurface, sprayOnSurface, commitStroke, clearSurface, disposeSurface, STROKE_OPACITY };
+export { createPaintSurface, paintOnSurface, sprayOnSurface, stampShapeOnSurface, commitStroke, clearSurface, disposeSurface, STROKE_OPACITY };
 
 export class PaintableModel {
     /**
@@ -349,6 +421,24 @@ export class PaintableModel {
         const w = surface.baseCanvas.width;
         const h = surface.baseCanvas.height;
         sprayOnSurface(surface, uv.x * w, (1 - uv.y) * h, color, sizePx);
+    }
+
+    /**
+     * もようブラシ: UV位置にシェイプを 1つスタンプする。
+     * @param {THREE.Intersection} intersection
+     * @param {string|object} color
+     * @param {number} sizePx
+     * @param {'circle'|'triangle'|'star'|'heart'} shape
+     * @param {number} opacity
+     */
+    stampShape(intersection, color, sizePx, shape, opacity = 1) {
+        const surfaceIndex = this.surfaceIndexFor(intersection);
+        const surface = this.surfaces[surfaceIndex];
+        const uv = intersection.uv;
+        if (!uv) return;
+        const w = surface.baseCanvas.width;
+        const h = surface.baseCanvas.height;
+        stampShapeOnSurface(surface, uv.x * w, (1 - uv.y) * h, shape, color, sizePx, opacity);
     }
 
     endStroke() {

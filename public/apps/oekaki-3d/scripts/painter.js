@@ -15,6 +15,8 @@
 const PEN_OPACITY = 0.6;
 // スプレーは同じスライダー位置でも太めに散布する
 const SPRAY_SIZE_MULT = 4;
+// もようブラシ: シェイプ間隔 = ブラシサイズ × この係数
+const PATTERN_INTERVAL_MULT = 1.4;
 
 // 2本指ジェスチャの分類しきい値
 const CLASSIFY_TIME_MS = 150;          // この時間が経つか…
@@ -50,7 +52,8 @@ export class Painter {
         this.activeRotaterId = null;        // 1本指回転中の主指
         this.paintModel = null;             // beginStroke 済みモデル
         this.paintPrev = null;              // 直前のヒット情報
-        this.paintTool = null;              // beginStroke 時の tool 種別
+        this.paintTool = null;             // beginStroke 時の tool 種別
+        this._patternTravel = 0;           // もようブラシ: 前スタンプからの移動距離累積
 
         // ドライブモード等で塗りを抑止する。false の間は 1本指=常に回転 として扱う。
         this.paintEnabled = true;
@@ -113,6 +116,8 @@ export class Painter {
     _onMove(e) {
         const p = this.pointers.get(e.pointerId);
         if (!p) return;
+        const prevX = p.x;
+        const prevY = p.y;
         const dx = e.clientX - p.x;
         const dy = e.clientY - p.y;
         p.x = e.clientX;
@@ -121,7 +126,7 @@ export class Painter {
         if (this.pending) {
             // 分類待ち中も、現状ジェスチャは継続(主指の動きだけ反映)
             if (this.gesture === 'paint' && p.id === this.activePainterId) {
-                this._paintAt(p.x, p.y);
+                this._paintAt(p.x, p.y, prevX, prevY);
             } else if (this.gesture === 'rotate' && p.id === this.activeRotaterId) {
                 this._rotateByPx(dx, dy);
             }
@@ -131,7 +136,7 @@ export class Painter {
 
         switch (this.gesture) {
             case 'paint':
-                if (p.id === this.activePainterId) this._paintAt(p.x, p.y);
+                if (p.id === this.activePainterId) this._paintAt(p.x, p.y, prevX, prevY);
                 break;
             case 'rotate':
                 if (p.id === this.activeRotaterId) this._rotateByPx(dx, dy);
@@ -275,6 +280,7 @@ export class Painter {
         this.paintModel = model;
         this.paintTool = tool;
         this.paintPrev = null;
+        this._patternTravel = 0;
         model?.beginStroke?.({ tool });
         // pointerdown 時点でも 1ドット落としたいので即時描画
         if (model) {
@@ -307,7 +313,7 @@ export class Painter {
         this.activePainterId = null;
     }
 
-    _paintAt(clientX, clientY) {
+    _paintAt(clientX, clientY, prevClientX, prevClientY) {
         const model = this.paintModel;
         if (!model) return;
         const hit = this.scene.raycast(clientX, clientY);
@@ -315,9 +321,20 @@ export class Painter {
             this.paintPrev = null;
             return;
         }
-        const { color, size, tool } = this.getState();
+        const { color, size, tool, patternShape } = this.getState();
         if (tool === 'spray') {
             model.spray(hit, color, size * SPRAY_SIZE_MULT);
+            this.paintPrev = null;
+        } else if (tool === 'pattern') {
+            // 移動距離を積算し、interval ごとにシェイプをスタンプ
+            const dx = prevClientX != null ? clientX - prevClientX : 0;
+            const dy = prevClientY != null ? clientY - prevClientY : 0;
+            this._patternTravel += Math.hypot(dx, dy);
+            const interval = size * PATTERN_INTERVAL_MULT;
+            if (this._patternTravel >= interval || (prevClientX == null)) {
+                model.stampShape(hit, color, size, patternShape ?? 'star', PEN_OPACITY);
+                this._patternTravel = 0;
+            }
             this.paintPrev = null;
         } else {
             this.paintPrev = model.paint(hit, this.paintPrev, color, size, PEN_OPACITY);

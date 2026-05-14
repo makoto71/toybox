@@ -21,6 +21,7 @@ import {
     createPaintSurface,
     paintOnSurface,
     sprayOnSurface,
+    stampShapeOnSurface,
     commitStroke,
     clearSurface,
     disposeSurface,
@@ -329,6 +330,17 @@ export class CarModel {
         const w = ps.baseCanvas.width;
         const h = ps.baseCanvas.height;
         sprayOnSurface(ps, uv.x * w, (1 - uv.y) * h, color, sizePx);
+    }
+
+    stampShape(intersection, color, sizePx, shape, opacity = 1) {
+        const surface = this._surfaces.find((s) => s.mesh === intersection.object);
+        if (!surface) return;
+        const uv = intersection.uv;
+        if (!uv) return;
+        const ps = surface.paintSurface;
+        const w = ps.baseCanvas.width;
+        const h = ps.baseCanvas.height;
+        stampShapeOnSurface(ps, uv.x * w, (1 - uv.y) * h, shape, color, sizePx, opacity);
     }
 
     endStroke() {
