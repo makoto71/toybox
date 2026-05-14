@@ -21,6 +21,9 @@ const DEFAULT_SIZE = 40;
 const BRUSH_ICONS = {
     pen: '✏️',
     spray: '💨',
+    glitter: '✨',
+    bristle: '🖌',
+    grass: '🌿',
     pattern: '✦',
 };
 

@@ -17,15 +17,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { attachOutline, disposeOutline } from '../outline.js';
-import {
-    createPaintSurface,
-    paintOnSurface,
-    sprayOnSurface,
-    stampShapeOnSurface,
-    commitStroke,
-    clearSurface,
-    disposeSurface,
-} from './PaintableModel.js';
+import { PaintableModel, createPaintSurface, disposeSurface } from './PaintableModel.js';
 
 const loader = new GLTFLoader();
 const cache = new Map();
@@ -223,11 +215,12 @@ function applyPacking(meshInfo, scale) {
 
 /* ---------------- Model ---------------- */
 
-export class CarModel {
+export class CarModel extends PaintableModel {
     /**
      * @param {{id:string, label:string, url:string}} opts
      */
     constructor({ id, label, url }) {
+        super(null);
         this.id = id;
         this.label = label;
         this.url = url;
@@ -235,7 +228,7 @@ export class CarModel {
         this.mesh = new THREE.Group();
         this.mesh.rotation.set(0.15, -0.55, 0);
 
-        this._surfaces = []; // { mesh, canvas, ctx, texture, material, triToChart }
+        this._carSurfaces = []; // { mesh, paintSurface, outline, triToChart }
         this.ready = this._load();
     }
 
@@ -272,7 +265,7 @@ export class CarModel {
             // 塗り絵風アウトライン (細部が出すぎないようにcreaseAngleはやや大きめ)
             const outline = attachOutline(mi.obj, mi.obj.geometry, { creaseAngle: 40, hullScale: 1.03 });
 
-            this._surfaces.push({
+            this._carSurfaces.push({
                 mesh: mi.obj,
                 paintSurface,
                 outline,
@@ -293,70 +286,40 @@ export class CarModel {
         this.mesh.add(root);
     }
 
+    _getAllSurfaces() {
+        return this._carSurfaces.map((s) => s.paintSurface);
+    }
+
     /**
      * @param {THREE.Intersection} intersection
      * @param {{mesh:THREE.Mesh, chartId:number, uv:{x:number,y:number}}|null} prev
      */
-    paint(intersection, prev, color, sizePx, opacity = 1) {
-        const surface = this._surfaces.find((s) => s.mesh === intersection.object);
-        if (!surface) return null;
+    _resolveHit(intersection, prev) {
+        const entry = this._carSurfaces.find((s) => s.mesh === intersection.object);
+        if (!entry) return null;
         const uv = intersection.uv;
-        if (!uv) return prev ?? null;
+        if (!uv) return null;
 
-        const ps = surface.paintSurface;
+        const ps = entry.paintSurface;
         const w = ps.baseCanvas.width;
         const h = ps.baseCanvas.height;
         const x = uv.x * w;
         const y = (1 - uv.y) * h;
 
-        const chartId = surface.triToChart[intersection.faceIndex];
-        const sameChart = prev
-            && prev.mesh === surface.mesh
-            && prev.chartId === chartId;
-        const prevPx = sameChart
-            ? { x: prev.uv.x * w, y: (1 - prev.uv.y) * h }
-            : null;
+        const chartId = entry.triToChart[intersection.faceIndex];
+        const sameChart = prev && prev.mesh === entry.mesh && prev.chartId === chartId;
+        const prevPx = sameChart ? { x: prev.uv.x * w, y: (1 - prev.uv.y) * h } : null;
 
-        paintOnSurface(ps, prevPx, { x, y }, color, sizePx, opacity);
-        return { mesh: surface.mesh, chartId, uv: { x: uv.x, y: uv.y } };
-    }
-
-    spray(intersection, color, sizePx) {
-        const surface = this._surfaces.find((s) => s.mesh === intersection.object);
-        if (!surface) return;
-        const uv = intersection.uv;
-        if (!uv) return;
-        const ps = surface.paintSurface;
-        const w = ps.baseCanvas.width;
-        const h = ps.baseCanvas.height;
-        sprayOnSurface(ps, uv.x * w, (1 - uv.y) * h, color, sizePx);
-    }
-
-    stampShape(intersection, color, sizePx, shape, opacity = 1) {
-        const surface = this._surfaces.find((s) => s.mesh === intersection.object);
-        if (!surface) return;
-        const uv = intersection.uv;
-        if (!uv) return;
-        const ps = surface.paintSurface;
-        const w = ps.baseCanvas.width;
-        const h = ps.baseCanvas.height;
-        stampShapeOnSurface(ps, uv.x * w, (1 - uv.y) * h, shape, color, sizePx, opacity);
-    }
-
-    endStroke() {
-        for (const s of this._surfaces) commitStroke(s.paintSurface);
-    }
-
-    clear() {
-        for (const s of this._surfaces) clearSurface(s.paintSurface);
-    }
-
-    surfaceIndexFor() {
-        return 0;
+        return {
+            surface: ps,
+            currPx: { x, y },
+            prevPx,
+            nextPrev: { mesh: entry.mesh, chartId, uv: { x: uv.x, y: uv.y } },
+        };
     }
 
     dispose() {
-        for (const s of this._surfaces) {
+        for (const s of this._carSurfaces) {
             disposeSurface(s.paintSurface);
             if (s.outline) disposeOutline(s.outline);
             s.mesh.geometry.dispose();
