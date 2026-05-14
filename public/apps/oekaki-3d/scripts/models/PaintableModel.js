@@ -472,7 +472,7 @@ export { createPaintSurface, paintOnSurface, sprayOnSurface, stampShapeOnSurface
 
 export class PaintableModel {
     /**
-     * @param {THREE.BufferGeometry} geometry
+     * @param {THREE.BufferGeometry|null} geometry  null = async subclass (e.g. CarModel)
      * @param {object} [options]
      * @param {number} [options.surfaceCount=1]
      * @param {number} [options.textureSize=2048]
@@ -480,6 +480,12 @@ export class PaintableModel {
     constructor(geometry, { surfaceCount = 1, textureSize = DEFAULT_TEXTURE_SIZE } = {}) {
         this.geometry = geometry;
         this.surfaces = [];
+
+        if (geometry === null) {
+            this.mesh = null;
+            this._outline = null;
+            return;
+        }
 
         for (let i = 0; i < surfaceCount; i++) {
             this.surfaces.push(createPaintSurface(textureSize));
@@ -494,22 +500,51 @@ export class PaintableModel {
         this._outline = attachOutline(this.mesh, geometry);
     }
 
-    clear() {
-        for (const s of this.surfaces) clearSurface(s);
+    /** サブクラスはこれをオーバーライドして自身のサーフェス配列を返す。 */
+    _getAllSurfaces() {
+        return this.surfaces;
     }
 
     /**
-     * ストローク開始の宣言。pen/spray は strokeCanvas に描かれるため
-     * baseCanvas の退避は不要。
+     * intersection と直前の cursor から描画先サーフェスとキャンバス座標を解決する。
+     * サブクラスはこれをオーバーライドしてシーム検出ロジックを差し替える。
+     * @returns {{surface, currPx, prevPx, nextPrev}|null}
      */
+    _resolveHit(intersection, prev) {
+        const surfaceIndex = this.surfaceIndexFor(intersection);
+        const surface = this.surfaces[surfaceIndex];
+        const uv = intersection.uv;
+        if (!uv) return null;
+
+        const w = surface.baseCanvas.width;
+        const h = surface.baseCanvas.height;
+        const x = uv.x * w;
+        const y = (1 - uv.y) * h;
+
+        const sameSurface = prev && prev.surfaceIndex === surfaceIndex;
+        const dx = sameSurface ? Math.abs(uv.x - prev.uv.x) : 1;
+        const dy = sameSurface ? Math.abs(uv.y - prev.uv.y) : 1;
+        const prevPx = (sameSurface && dx < 0.4 && dy < 0.4)
+            ? { x: prev.uv.x * w, y: (1 - prev.uv.y) * h }
+            : null;
+
+        return {
+            surface,
+            currPx: { x, y },
+            prevPx,
+            nextPrev: { surfaceIndex, uv: { x: uv.x, y: uv.y } },
+        };
+    }
+
+    clear() {
+        for (const s of this._getAllSurfaces()) clearSurface(s);
+    }
+
     beginStroke() {}
 
-    /**
-     * 進行中の(まだ commit されていない)ストロークを破棄する。
-     */
     cancelStroke() {
-        for (const s of this.surfaces) discardStroke(s);
-        for (const s of this.surfaces) {
+        for (const s of this._getAllSurfaces()) discardStroke(s);
+        for (const s of this._getAllSurfaces()) {
             refreshDisplay(s, 0, 0, s.displayCanvas.width, s.displayCanvas.height);
         }
     }
@@ -520,108 +555,47 @@ export class PaintableModel {
         return typeof idx === 'number' ? idx : 0;
     }
 
-    /**
-     * @param {THREE.Intersection} intersection
-     * @param {{surfaceIndex:number, uv:{x:number,y:number}}|null} prev
-     * @param {string|object} color  // 文字列 or {type:'solid'|'gradient',...}
-     * @param {number} sizePx
-     * @param {number} [opacity=1]
-     */
     paint(intersection, prev, color, sizePx, opacity = 1) {
-        const surfaceIndex = this.surfaceIndexFor(intersection);
-        const surface = this.surfaces[surfaceIndex];
-        const uv = intersection.uv;
-        if (!uv) return prev ?? null;
-
-        const w = surface.baseCanvas.width;
-        const h = surface.baseCanvas.height;
-        const x = uv.x * w;
-        const y = (1 - uv.y) * h;
-
-        const sameSurface = prev && prev.surfaceIndex === surfaceIndex;
-        const seamGuard = 0.4;
-        const dx = sameSurface ? Math.abs(uv.x - prev.uv.x) : 1;
-        const dy = sameSurface ? Math.abs(uv.y - prev.uv.y) : 1;
-        const connect = sameSurface && dx < seamGuard && dy < seamGuard;
-        const prevPx = connect ? { x: prev.uv.x * w, y: (1 - prev.uv.y) * h } : null;
-
-        paintOnSurface(surface, prevPx, { x, y }, color, sizePx, opacity);
-        return { surfaceIndex, uv: { x: uv.x, y: uv.y } };
+        const hit = this._resolveHit(intersection, prev);
+        if (!hit) return prev ?? null;
+        paintOnSurface(hit.surface, hit.prevPx, hit.currPx, color, sizePx, opacity);
+        return hit.nextPrev;
     }
 
-    /**
-     * スプレー (エアブラシ): UV位置にソフトなスタンプを 1発落とす。
-     * 連続呼び出しで徐々に濃くなる。
-     */
     spray(intersection, color, sizePx) {
-        const surfaceIndex = this.surfaceIndexFor(intersection);
-        const surface = this.surfaces[surfaceIndex];
-        const uv = intersection.uv;
-        if (!uv) return;
-        const w = surface.baseCanvas.width;
-        const h = surface.baseCanvas.height;
-        sprayOnSurface(surface, uv.x * w, (1 - uv.y) * h, color, sizePx);
+        const hit = this._resolveHit(intersection, null);
+        if (!hit) return;
+        sprayOnSurface(hit.surface, hit.currPx.x, hit.currPx.y, color, sizePx);
     }
 
     glitter(intersection, color, sizePx) {
-        const surfaceIndex = this.surfaceIndexFor(intersection);
-        const surface = this.surfaces[surfaceIndex];
-        const uv = intersection.uv;
-        if (!uv) return;
-        const w = surface.baseCanvas.width;
-        const h = surface.baseCanvas.height;
-        glitterOnSurface(surface, uv.x * w, (1 - uv.y) * h, color, sizePx);
+        const hit = this._resolveHit(intersection, null);
+        if (!hit) return;
+        glitterOnSurface(hit.surface, hit.currPx.x, hit.currPx.y, color, sizePx);
     }
 
     bristle(intersection, prev, color, sizePx, opacity = 1) {
-        const surfaceIndex = this.surfaceIndexFor(intersection);
-        const surface = this.surfaces[surfaceIndex];
-        const uv = intersection.uv;
-        if (!uv) return prev ?? null;
-        const w = surface.baseCanvas.width;
-        const h = surface.baseCanvas.height;
-        const x = uv.x * w;
-        const y = (1 - uv.y) * h;
-        const sameSurface = prev && prev.surfaceIndex === surfaceIndex;
-        const dx = sameSurface ? Math.abs(uv.x - prev.uv.x) : 1;
-        const dy = sameSurface ? Math.abs(uv.y - prev.uv.y) : 1;
-        const connect = sameSurface && dx < 0.4 && dy < 0.4;
-        const prevPx = connect ? { x: prev.uv.x * w, y: (1 - prev.uv.y) * h } : null;
-        bristleOnSurface(surface, prevPx, { x, y }, color, sizePx, opacity);
-        return { surfaceIndex, uv: { x: uv.x, y: uv.y } };
+        const hit = this._resolveHit(intersection, prev);
+        if (!hit) return prev ?? null;
+        bristleOnSurface(hit.surface, hit.prevPx, hit.currPx, color, sizePx, opacity);
+        return hit.nextPrev;
     }
 
     grass(intersection, prev, color, sizePx, opacity = 1) {
-        const surfaceIndex = this.surfaceIndexFor(intersection);
-        const surface = this.surfaces[surfaceIndex];
-        const uv = intersection.uv;
-        if (!uv) return prev ?? null;
-        const w = surface.baseCanvas.width;
-        const h = surface.baseCanvas.height;
-        grassOnSurface(surface, { x: uv.x * w, y: (1 - uv.y) * h }, color, sizePx, opacity);
-        return { surfaceIndex, uv: { x: uv.x, y: uv.y } };
+        const hit = this._resolveHit(intersection, prev);
+        if (!hit) return prev ?? null;
+        grassOnSurface(hit.surface, hit.currPx, color, sizePx, opacity);
+        return hit.nextPrev;
     }
 
-    /**
-     * もようブラシ: UV位置にシェイプを 1つスタンプする。
-     * @param {THREE.Intersection} intersection
-     * @param {string|object} color
-     * @param {number} sizePx
-     * @param {'circle'|'triangle'|'star'|'heart'} shape
-     * @param {number} opacity
-     */
     stampShape(intersection, color, sizePx, shape, opacity = 1) {
-        const surfaceIndex = this.surfaceIndexFor(intersection);
-        const surface = this.surfaces[surfaceIndex];
-        const uv = intersection.uv;
-        if (!uv) return;
-        const w = surface.baseCanvas.width;
-        const h = surface.baseCanvas.height;
-        stampShapeOnSurface(surface, uv.x * w, (1 - uv.y) * h, shape, color, sizePx, opacity);
+        const hit = this._resolveHit(intersection, null);
+        if (!hit) return;
+        stampShapeOnSurface(hit.surface, hit.currPx.x, hit.currPx.y, shape, color, sizePx, opacity);
     }
 
     endStroke() {
-        for (const s of this.surfaces) commitStroke(s);
+        for (const s of this._getAllSurfaces()) commitStroke(s);
     }
 
     dispose() {
