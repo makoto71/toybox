@@ -267,7 +267,12 @@ export class UI {
         if (this._suppressColorClick) return;
         const btn = e.target.closest('.color-btn');
         if (!btn) return;
-        this._mouseColorStart = { startColor: btn.dataset.color, startBtn: btn, lastColor: btn.dataset.color };
+        this._mouseColorStart = {
+            startColor: btn.dataset.color,
+            startBtn: btn,
+            lastColor: btn.dataset.color,
+            currentHoverBtn: null,
+        };
         btn.classList.add('pressing');
     }
 
@@ -276,9 +281,15 @@ export class UI {
         if (!start) return;
         const el = document.elementFromPoint(e.clientX, e.clientY);
         const btn = el && el.closest ? el.closest('.color-btn') : null;
-        if (!btn) return;
-        if (btn !== start.startBtn) btn.classList.add('hovering');
-        start.lastColor = btn.dataset.color;
+        if (btn === start.currentHoverBtn) return;
+        if (start.currentHoverBtn && start.currentHoverBtn !== start.startBtn) {
+            start.currentHoverBtn.classList.remove('hovering');
+        }
+        if (btn && btn !== start.startBtn) {
+            btn.classList.add('hovering');
+        }
+        start.currentHoverBtn = btn;
+        if (btn) start.lastColor = btn.dataset.color;
     }
 
     _onColorMouseUp(e) {
@@ -428,7 +439,12 @@ export class UI {
         if (this._suppressShapeClick) return;
         const btn = e.target.closest('.shape-card');
         if (!btn) return;
-        this._mouseShapeStart = { startShape: btn.dataset.shape, startBtn: btn, lastShape: btn.dataset.shape };
+        this._mouseShapeStart = {
+            startShape: btn.dataset.shape,
+            startBtn: btn,
+            lastShape: btn.dataset.shape,
+            currentHoverBtn: null,
+        };
         btn.classList.add('pressing');
     }
 
@@ -437,9 +453,15 @@ export class UI {
         if (!start) return;
         const el = document.elementFromPoint(e.clientX, e.clientY);
         const btn = el && el.closest ? el.closest('.shape-card') : null;
-        if (!btn) return;
-        if (btn !== start.startBtn) btn.classList.add('hovering');
-        start.lastShape = btn.dataset.shape;
+        if (btn === start.currentHoverBtn) return;
+        if (start.currentHoverBtn && start.currentHoverBtn !== start.startBtn) {
+            start.currentHoverBtn.classList.remove('hovering');
+        }
+        if (btn && btn !== start.startBtn) {
+            btn.classList.add('hovering');
+        }
+        start.currentHoverBtn = btn;
+        if (btn) start.lastShape = btn.dataset.shape;
     }
 
     _onShapeMouseUp(e) {
