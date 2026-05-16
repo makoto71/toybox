@@ -483,6 +483,13 @@ body.drive-mode .stage canvas {
     border-color: #2ED573;
 }
 
+.shape-card.pressing,
+.shape-card.hovering {
+    background: #e8f5e9;
+    border-color: #7BED9F;
+    transform: translateY(-2px);
+}
+
 .shape-card-symbol {
     font-size: 1.8rem;
     line-height: 1;

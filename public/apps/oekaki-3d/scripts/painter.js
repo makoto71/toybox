@@ -53,6 +53,7 @@ export class Painter {
         this.paintPrev = null;
         this.paintTool = null;
         this._patternTravel = 0;   // もようブラシ用
+        this._patternStampIndex = 0; // 2形交互スタンプ用カウンタ
 
         // ドライブモード等で塗りを抑止する。false の間は 1本指=常に回転 として扱う。
         this.paintEnabled = true;
@@ -280,6 +281,7 @@ export class Painter {
         this.paintTool = tool;
         this.paintPrev = null;
         this._patternTravel = 0;
+        this._patternStampIndex = 0;
         model?.beginStroke?.({ tool });
         // pointerdown 時点でも 1ドット落としたいので即時描画
         if (model) {
@@ -320,7 +322,7 @@ export class Painter {
             this.paintPrev = null;
             return;
         }
-        const { color, size, tool, patternShape } = this.getState();
+        const { color, size, tool, patternShapes } = this.getState();
         const travel = prevClientX != null ? Math.hypot(clientX - prevClientX, clientY - prevClientY) : 0;
 
         if (tool === 'spray') {
@@ -330,7 +332,10 @@ export class Painter {
             this._patternTravel += travel;
             const interval = size * PATTERN_INTERVAL_MULT;
             if (this._patternTravel >= interval || prevClientX == null) {
-                model.stampShape(hit, color, size, patternShape ?? 'star', PEN_OPACITY);
+                const shapes = (patternShapes && patternShapes.length) ? patternShapes : ['star'];
+                const shape = shapes[this._patternStampIndex % shapes.length];
+                model.stampShape(hit, color, size, shape, PEN_OPACITY);
+                this._patternStampIndex++;
                 this._patternTravel = 0;
             }
             this.paintPrev = null;

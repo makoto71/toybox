@@ -52,7 +52,7 @@ export class UI {
             colorSpec: { type: 'solid', color: COLORS[0] },
             size: DEFAULT_SIZE,
             tool: 'pen',
-            patternShape: 'star',
+            patternShapes: ['star'],
             modelId: modelRegistry[0].id,
         };
         /** @type {Map<number, {startColor:string, startBtn:HTMLElement}>} */
@@ -62,6 +62,12 @@ export class UI {
         this._touchedColors = [];
         /** タッチで処理した直後の click を抑制するためのフラグ */
         this._suppressColorClick = false;
+
+        /** @type {Map<number, {startShape:string, startBtn:HTMLElement, currentHoverBtn:HTMLElement|null}>} */
+        this._activeShapeTouches = new Map();
+        /** @type {string[]} */
+        this._touchedShapes = [];
+        this._suppressShapeClick = false;
     }
 
     setup() {
@@ -89,7 +95,7 @@ export class UI {
             color: this.state.colorSpec,
             size: this.state.size,
             tool: this.state.tool,
-            patternShape: this.state.patternShape,
+            patternShapes: this.state.patternShapes,
             modelId: this.state.modelId,
         };
     }
@@ -127,8 +133,11 @@ export class UI {
         const inner = document.getElementById('brush-trigger-inner');
         if (!inner) return;
         if (this.state.tool === 'pattern') {
-            const shape = PATTERN_SHAPES.find((s) => s.id === this.state.patternShape);
-            inner.textContent = shape ? shape.symbol : '✦';
+            const shapes = this.state.patternShapes ?? [];
+            const symbols = shapes
+                .map((id) => PATTERN_SHAPES.find((s) => s.id === id)?.symbol)
+                .filter(Boolean);
+            inner.textContent = symbols.length ? symbols.join('') : '✦';
         } else {
             inner.textContent = BRUSH_ICONS[this.state.tool] ?? '✏️';
         }
@@ -311,20 +320,147 @@ export class UI {
             });
         });
 
-        // 形選択ボタン
+        // 形選択ボタン (色グラデーションと同じく、ドラッグで2形を選ぶと交互スタンプ)
         const shapeGrid = document.getElementById('shape-grid');
         PATTERN_SHAPES.forEach((s) => {
             const btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = `shape-card${s.id === this.state.patternShape ? ' active' : ''}`;
+            const active = this.state.patternShapes.includes(s.id);
+            btn.className = `shape-card${active ? ' active' : ''}`;
             btn.dataset.shape = s.id;
             btn.innerHTML = `<span class="shape-card-symbol">${s.symbol}</span><span class="shape-card-label">${s.label}</span>`;
-            btn.addEventListener('click', () => {
-                this._setPatternShape(s.id);
-                this._closeOverlay('brush-overlay');
-            });
             shapeGrid.appendChild(btn);
         });
+
+        shapeGrid.addEventListener('touchstart', (e) => this._onShapeTouchStart(e), { passive: false });
+        shapeGrid.addEventListener('touchmove', (e) => this._onShapeTouchMove(e), { passive: false });
+        shapeGrid.addEventListener('touchend', (e) => this._onShapeTouchEnd(e), { passive: false });
+        shapeGrid.addEventListener('touchcancel', (e) => this._onShapeTouchEnd(e), { passive: false });
+
+        shapeGrid.addEventListener('mousedown', (e) => this._onShapeMouseDown(e));
+        window.addEventListener('mousemove', (e) => this._onShapeMouseMove(e));
+        window.addEventListener('mouseup', (e) => this._onShapeMouseUp(e));
+    }
+
+    // ---------- 形タッチ/マウス ----------
+
+    _touchToShapeBtn(touch) {
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        return el && el.closest ? el.closest('.shape-card') : null;
+    }
+
+    _registerTouchedShape(shape) {
+        if (!shape) return;
+        if (!this._touchedShapes.includes(shape)) this._touchedShapes.push(shape);
+    }
+
+    _isShapeBtnHeldByOthers(btn, exceptId) {
+        for (const [id, st] of this._activeShapeTouches) {
+            if (id === exceptId) continue;
+            if (st.currentHoverBtn === btn || st.startBtn === btn) return true;
+        }
+        return false;
+    }
+
+    _onShapeTouchStart(e) {
+        e.preventDefault();
+        for (const t of e.changedTouches) {
+            const btn = this._touchToShapeBtn(t);
+            if (!btn) continue;
+            this._activeShapeTouches.set(t.identifier, {
+                startShape: btn.dataset.shape,
+                startBtn: btn,
+                currentHoverBtn: btn,
+            });
+            this._registerTouchedShape(btn.dataset.shape);
+            btn.classList.add('pressing');
+        }
+    }
+
+    _onShapeTouchMove(e) {
+        e.preventDefault();
+        for (const t of e.changedTouches) {
+            const state = this._activeShapeTouches.get(t.identifier);
+            if (!state) continue;
+            const newBtn = this._touchToShapeBtn(t);
+            const oldBtn = state.currentHoverBtn;
+            if (newBtn === oldBtn) continue;
+            if (oldBtn && oldBtn !== state.startBtn && !this._isShapeBtnHeldByOthers(oldBtn, t.identifier)) {
+                oldBtn.classList.remove('hovering');
+            }
+            if (newBtn && newBtn !== state.startBtn) {
+                newBtn.classList.add('hovering');
+            }
+            state.currentHoverBtn = newBtn;
+            if (newBtn) this._registerTouchedShape(newBtn.dataset.shape);
+        }
+    }
+
+    _onShapeTouchEnd(e) {
+        e.preventDefault();
+        for (const t of e.changedTouches) {
+            const state = this._activeShapeTouches.get(t.identifier);
+            if (!state) continue;
+            const endBtn = this._touchToShapeBtn(t);
+            if (endBtn) this._registerTouchedShape(endBtn.dataset.shape);
+            const cur = state.currentHoverBtn;
+            if (cur && cur !== state.startBtn && !this._isShapeBtnHeldByOthers(cur, t.identifier)) {
+                cur.classList.remove('hovering');
+            }
+            this._activeShapeTouches.delete(t.identifier);
+        }
+
+        if (this._activeShapeTouches.size === 0) {
+            const shapes = this._touchedShapes;
+            this._touchedShapes = [];
+            this._clearShapeBtnStates();
+            if (shapes.length === 0) return;
+            this._suppressShapeClick = true;
+            setTimeout(() => { this._suppressShapeClick = false; }, 400);
+            const picked = shapes.length >= 2
+                ? [shapes[0], shapes[shapes.length - 1]]
+                : [shapes[0]];
+            this._applyShapeSelection(picked);
+        }
+    }
+
+    _onShapeMouseDown(e) {
+        if (this._suppressShapeClick) return;
+        const btn = e.target.closest('.shape-card');
+        if (!btn) return;
+        this._mouseShapeStart = { startShape: btn.dataset.shape, startBtn: btn, lastShape: btn.dataset.shape };
+        btn.classList.add('pressing');
+    }
+
+    _onShapeMouseMove(e) {
+        const start = this._mouseShapeStart;
+        if (!start) return;
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const btn = el && el.closest ? el.closest('.shape-card') : null;
+        if (!btn) return;
+        if (btn !== start.startBtn) btn.classList.add('hovering');
+        start.lastShape = btn.dataset.shape;
+    }
+
+    _onShapeMouseUp(e) {
+        const start = this._mouseShapeStart;
+        if (!start) return;
+        this._mouseShapeStart = null;
+        const picked = (start.lastShape && start.lastShape !== start.startShape)
+            ? [start.startShape, start.lastShape]
+            : [start.startShape];
+        this._clearShapeBtnStates();
+        this._applyShapeSelection(picked);
+    }
+
+    _clearShapeBtnStates() {
+        document.querySelectorAll('.shape-card.pressing, .shape-card.hovering')
+            .forEach((b) => b.classList.remove('pressing', 'hovering'));
+    }
+
+    _applyShapeSelection(shapes) {
+        this._setPatternShapes(shapes);
+        this._closeOverlay('brush-overlay');
     }
 
     _setTool(tool) {
@@ -340,10 +476,12 @@ export class UI {
         this.cb.onToolChange(tool);
     }
 
-    _setPatternShape(shape) {
-        this.state.patternShape = shape;
+    _setPatternShapes(shapes) {
+        const cleaned = (shapes || []).filter(Boolean);
+        this.state.patternShapes = cleaned.length ? cleaned : ['star'];
+        const set = new Set(this.state.patternShapes);
         document.querySelectorAll('.shape-card').forEach((b) => {
-            b.classList.toggle('active', b.dataset.shape === shape);
+            b.classList.toggle('active', set.has(b.dataset.shape));
         });
         this._updateBrushTriggerPreview();
     }
