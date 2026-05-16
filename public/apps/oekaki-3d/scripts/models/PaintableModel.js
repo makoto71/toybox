@@ -285,11 +285,18 @@ function _drawShapePath(ctx, cx, cy, r, shape) {
             break;
         }
         case 'heart': {
-            // 数式ハート (キュービック曲線)
-            const s = r * 0.9;
-            ctx.moveTo(cx, cy + s * 0.8);
-            ctx.bezierCurveTo(cx - s * 2, cy - s * 0.5, cx - s * 2, cy - s * 1.8, cx, cy - s * 0.5);
-            ctx.bezierCurveTo(cx + s * 2, cy - s * 1.8, cx + s * 2, cy - s * 0.5, cx, cy + s * 0.8);
+            // MDN canvas tutorial の 6 ベジェハート。
+            // 元座標系は 150x150 で中心 (75, 72.5)、横幅 110。r/55 で正規化して幅 2r にスケール。
+            const k = r / 55;
+            const px = (x) => cx + (x - 75) * k;
+            const py = (y) => cy + (y - 72.5) * k;
+            ctx.moveTo(px(75), py(40));
+            ctx.bezierCurveTo(px(75),  py(37),   px(70),  py(25),   px(50),  py(25));
+            ctx.bezierCurveTo(px(20),  py(25),   px(20),  py(62.5), px(20),  py(62.5));
+            ctx.bezierCurveTo(px(20),  py(80),   px(40),  py(102),  px(75),  py(120));
+            ctx.bezierCurveTo(px(110), py(102),  px(130), py(80),   px(130), py(62.5));
+            ctx.bezierCurveTo(px(130), py(62.5), px(130), py(25),   px(100), py(25));
+            ctx.bezierCurveTo(px(85),  py(25),   px(75),  py(37),   px(75),  py(40));
             ctx.closePath();
             break;
         }
