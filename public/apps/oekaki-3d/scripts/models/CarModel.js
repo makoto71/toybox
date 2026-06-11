@@ -11,7 +11,8 @@
  * ブラシ太さの一貫性:
  *   各メッシュごとに最大可能スケールを求め、モデル内の最小値を「グローバルスケール」
  *   として全メッシュに適用。これによりタイヤと車体で世界座標のブラシ太さが揃う。
- *   小さいメッシュ(タイヤ等)は1024×1024の一部しか使わないが許容。
+ *   小さいメッシュ(タイヤ等)はグローバル密度 (px/世界単位) を保ったまま
+ *   小さいアトラスに詰め直してメモリを節約する。
  */
 
 import * as THREE from 'three';
@@ -28,9 +29,12 @@ function loadGltf(url) {
 }
 
 const TARGET_SIZE = 2.4;
-const TEX_SIZE = 1024;
+// まる(2048)・はこ(1024×6面)と同等のテクセル密度になる基準アトラスサイズ
+const TEX_SIZE = 2048;
+// 小さいメッシュ用の縮小アトラス候補 (密度は TEX_SIZE 基準のまま)
+const SMALL_TEX_SIZES = [256, 512, 1024];
+const PAD_PX = 8;
 const NORMAL_DOT_THRESHOLD = 0.85;
-const ATLAS_PAD = 0.004;
 const TARGET_FILL = 0.55;
 
 /* ---------------- Chart building (no UV/packing yet) ---------------- */
@@ -163,42 +167,42 @@ function buildCharts(srcGeometry) {
 
 /* ---------------- Packing ---------------- */
 
-function packCharts(charts, scale) {
+function packCharts(charts, scale, pad) {
     const sorted = [...charts].sort((a, b) => b.h - a.h);
     const list = [];
-    let sx = ATLAS_PAD;
-    let sy = ATLAS_PAD;
+    let sx = pad;
+    let sy = pad;
     let sh = 0;
     for (const c of sorted) {
         const w = c.w * scale;
         const h = c.h * scale;
-        if (sx + w + ATLAS_PAD > 1 - ATLAS_PAD) {
-            sy += sh + ATLAS_PAD;
-            sx = ATLAS_PAD;
+        if (sx + w + pad > 1 - pad) {
+            sy += sh + pad;
+            sx = pad;
             sh = 0;
         }
-        if (sy + h + ATLAS_PAD > 1 - ATLAS_PAD) return null;
+        if (sy + h + pad > 1 - pad) return null;
         list.push({ chart: c, u: sx, v: sy, w, h });
-        sx += w + ATLAS_PAD;
+        sx += w + pad;
         if (h > sh) sh = h;
     }
     return list;
 }
 
-function findMaxScale(charts) {
+function findMaxScale(charts, pad) {
     let totalArea = 0;
     for (const c of charts) totalArea += c.w * c.h;
     if (totalArea <= 0) return 1;
     let scale = Math.sqrt(TARGET_FILL / totalArea);
     for (let attempt = 0; attempt < 30; attempt++) {
-        if (packCharts(charts, scale)) return scale;
+        if (packCharts(charts, scale, pad)) return scale;
         scale *= 0.85;
     }
     return scale;
 }
 
-function applyPacking(meshInfo, scale) {
-    const placements = packCharts(meshInfo.charts, scale) || [];
+function applyPacking(meshInfo, scale, pad) {
+    const placements = packCharts(meshInfo.charts, scale, pad) || [];
     const pos = meshInfo.geometry.attributes.position;
     const uvs = new Float32Array(pos.count * 2);
     for (const p of placements) {
@@ -241,7 +245,7 @@ export class CarModel extends PaintableModel {
         root.traverse((obj) => {
             if (!obj.isMesh) return;
             const info = buildCharts(obj.geometry);
-            const maxScale = findMaxScale(info.charts);
+            const maxScale = findMaxScale(info.charts, PAD_PX / TEX_SIZE);
             meshInfos.push({ obj, info, maxScale });
         });
         if (meshInfos.length === 0) return;
@@ -256,10 +260,19 @@ export class CarModel extends PaintableModel {
 
         // Pass 3: グローバルスケールでパッキング&UV確定 → 描画用キャンバス/マテリアル
         for (const mi of meshInfos) {
-            applyPacking(mi.info, globalScale);
+            // グローバル密度 (globalScale × TEX_SIZE px/世界単位) を保ったまま
+            // チャートが収まる最小のアトラスを選ぶ (タイヤ等のメモリ節約)
+            let texSize = TEX_SIZE;
+            for (const cand of SMALL_TEX_SIZES) {
+                if (packCharts(mi.info.charts, globalScale * (TEX_SIZE / cand), PAD_PX / cand)) {
+                    texSize = cand;
+                    break;
+                }
+            }
+            applyPacking(mi.info, globalScale * (TEX_SIZE / texSize), PAD_PX / texSize);
             mi.obj.geometry = mi.info.geometry;
 
-            const paintSurface = createPaintSurface(TEX_SIZE);
+            const paintSurface = createPaintSurface(texSize);
             mi.obj.material = paintSurface.material;
 
             // 塗り絵風アウトライン (細部が出すぎないようにcreaseAngleはやや大きめ)
