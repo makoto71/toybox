@@ -65,6 +65,8 @@ export class SceneManager {
         /** @type {((dt:number) => void) | null} 毎フレーム呼ばれる外部フック (ドライブモード等) */
         this.onUpdate = null;
         this._lastTickTime = 0;
+        /** WebXRセッション中は true。描画はXRフレームループ側が行うので通常tickは休止 */
+        this.xrSuspended = false;
 
         this.resize();
         this._tick = this._tick.bind(this);
@@ -220,6 +222,10 @@ export class SceneManager {
 
     _tick() {
         requestAnimationFrame(this._tick);
+        if (this.xrSuspended) {
+            this._lastTickTime = 0; // 復帰直後に dt が跳ねないように
+            return;
+        }
         const now = performance.now();
         const dt = this._lastTickTime ? Math.min(0.1, (now - this._lastTickTime) / 1000) : 0;
         this._lastTickTime = now;

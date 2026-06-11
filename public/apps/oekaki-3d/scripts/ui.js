@@ -555,6 +555,10 @@ export class UI {
             dropdown.classList.remove('show');
             this.cb.onDriveToggle?.(true);
         });
+        document.getElementById('menu-ar').addEventListener('click', () => {
+            dropdown.classList.remove('show');
+            this.cb.onPlaceAR?.();
+        });
         document.getElementById('menu-fullscreen').addEventListener('click', () => {
             dropdown.classList.remove('show');
             this._toggleFullscreen();

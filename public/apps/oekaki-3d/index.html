@@ -28,6 +28,7 @@
       <div class="menu-dropdown" id="menu-dropdown">
         <button class="menu-item" id="menu-model">モデルをえらぶ</button>
         <button class="menu-item" id="menu-drive">はしる</button>
+        <button class="menu-item" id="menu-ar">おく</button>
         <button class="menu-item" id="menu-fullscreen">ぜんがめん</button>
         <button class="menu-item" id="menu-clear">まっしろにもどす</button>
         <button class="menu-item" id="menu-save">ほぞん</button>
@@ -56,6 +57,12 @@
 
     <!-- ドライブモード退出ボタン (右上) -->
     <button class="drive-exit" id="drive-exit" hidden>もどる</button>
+  </div>
+
+  <!-- WebXR ARモード用オーバーレイ (dom-overlay でセッション中だけ表示) -->
+  <div id="ar-overlay" hidden>
+    <button class="drive-exit" id="ar-exit">もどる</button>
+    <div class="ar-hint" id="ar-hint"></div>
   </div>
 
   <!-- ブラシ選択オーバーレイ -->

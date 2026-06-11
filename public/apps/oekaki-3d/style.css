@@ -75,6 +75,34 @@ body.drive-mode .stage canvas {
     cursor: grab;
 }
 
+/* ================ AR mode (WebXR dom-overlay) ================ */
+#ar-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    touch-action: none;
+}
+
+.ar-hint {
+    position: absolute;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.55rem 1.1rem;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 700;
+    white-space: nowrap;
+    pointer-events: none;
+    transition: opacity 0.8s ease;
+}
+
+.ar-hint.fade {
+    opacity: 0;
+}
+
 /* ================ Top-left menu ================ */
 .menu-container {
     position: absolute;
