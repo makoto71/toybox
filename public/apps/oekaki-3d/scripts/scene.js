@@ -7,6 +7,9 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { initWatercolorSim } from './watercolor-sim.js';
+import { initSmudgeSim } from './smudge-sim.js';
+import { initSandSim } from './sand-sim.js';
 
 export class SceneManager {
     /**
@@ -54,6 +57,11 @@ export class SceneManager {
         this.pointerVec = new THREE.Vector2();
         this.currentModel = null;
 
+        // GPUシミュレーション群 (WebGL2 非対応なら null → 各2Dフォールバック)
+        this.watercolorSim = initWatercolorSim(this.renderer);
+        this.smudgeSim = initSmudgeSim(this.renderer);
+        this.sandSim = initSandSim(this.renderer);
+
         /** @type {((dt:number) => void) | null} 毎フレーム呼ばれる外部フック (ドライブモード等) */
         this.onUpdate = null;
         this._lastTickTime = 0;
@@ -67,6 +75,10 @@ export class SceneManager {
 
     async setModel(model) {
         if (this.currentModel) {
+            // 濡れた絵の具・砂などが乗ったままモデルを破棄しないように
+            this.watercolorSim?.discardWet();
+            this.smudgeSim?.discardWet();
+            this.sandSim?.discardWet();
             this.scene.remove(this.currentModel.mesh);
             this.currentModel.dispose();
         }
@@ -213,6 +225,8 @@ export class SceneManager {
         this._lastTickTime = now;
         this.controls.update();
         if (this.onUpdate) this.onUpdate(dt);
+        this.watercolorSim?.update(dt);
+        this.sandSim?.update(dt);
         this.renderer.render(this.scene, this.camera);
     }
 }

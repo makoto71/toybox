@@ -9,15 +9,34 @@
 
 import * as THREE from 'three';
 import { attachOutline, disposeOutline } from '../outline.js';
+import { getWatercolorSim } from '../watercolor-sim.js';
+import { getSmudgeSim } from '../smudge-sim.js';
+import { getSandSim } from '../sand-sim.js';
+
+/** 利用可能なGPUシミュレーションを列挙する (未対応環境の null は除く) */
+function allSims() {
+    return [getWatercolorSim(), getSmudgeSim(), getSandSim()].filter(Boolean);
+}
+
+/**
+ * この surface に乗っている他のシミュレーションを焼き込んで落ち着かせる。
+ * material.map の差し替えは同時に1つのシムしかできないため、
+ * 別のシム系ブラシを使い始める前に必ず呼ぶ。
+ */
+function settleOtherSims(surface, except) {
+    for (const sim of allSims()) {
+        if (sim !== except && sim.attachedSurface === surface) sim.bakeNow();
+    }
+}
 
 const DEFAULT_TEXTURE_SIZE = 2048;
 const STROKE_OPACITY = 0.6;
 
-function makeCanvas(size, fillColor) {
+function makeCanvas(size, fillColor, ctxOptions) {
     const c = document.createElement('canvas');
     c.width = size;
     c.height = size;
-    const ctx = c.getContext('2d');
+    const ctx = c.getContext('2d', ctxOptions);
     if (fillColor) {
         ctx.fillStyle = fillColor;
         ctx.fillRect(0, 0, size, size);
@@ -28,7 +47,8 @@ function makeCanvas(size, fillColor) {
 function createPaintSurface(textureSize) {
     const base = makeCanvas(textureSize, '#ffffff');
     const stroke = makeCanvas(textureSize, null);
-    const display = makeCanvas(textureSize, '#ffffff');
+    // display はすいさいの色拾い (getImageData) で頻繁に読むため CPU 側に置く
+    const display = makeCanvas(textureSize, '#ffffff', { willReadFrequently: true });
 
     const texture = new THREE.CanvasTexture(display.canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -57,6 +77,9 @@ function createPaintSurface(textureSize) {
         material,
         hasStroke: false,
         strokeOpacity: STROKE_OPACITY,
+        // ストロークを base/display に合成するときの合成モード。
+        // すいさいは 'multiply' にして重ね塗りで色が混ざる (グレーズ) ようにする。
+        strokeBlend: 'source-over',
     };
 }
 
@@ -83,7 +106,9 @@ function refreshDisplay(surface, dx0, dy0, dw, dh) {
     dctx.drawImage(surface.baseCanvas, dx0, dy0, dw, dh, dx0, dy0, dw, dh);
     if (surface.hasStroke) {
         dctx.globalAlpha = surface.strokeOpacity;
+        dctx.globalCompositeOperation = surface.strokeBlend ?? 'source-over';
         dctx.drawImage(surface.strokeCanvas, dx0, dy0, dw, dh, dx0, dy0, dw, dh);
+        dctx.globalCompositeOperation = 'source-over';
         dctx.globalAlpha = 1.0;
     }
     surface.texture.needsUpdate = true;
@@ -305,6 +330,155 @@ function _drawShapePath(ctx, cx, cy, r, shape) {
     }
 }
 
+/* ---------------- すいさい (watercolor) ---------------- */
+
+const WATERCOLOR_ALPHA = 0.20;   // スタンプ中心の不透明度 (低くして重なりで濃くなる)
+const WATERCOLOR_PICKUP = 0.30;  // 下地の色を筆が拾う割合
+const WATERCOLOR_REFRESH = 0.45; // 筆から新しい絵の具が供給される割合
+
+/**
+ * 単定数 Kubelka-Munk 近似でチャンネルごとに2色を混ぜる。
+ * RGB の線形補間と違い、絵の具らしい減法混色になる (青+黄→緑)。
+ * @param {number[]} a RGB (0-255)
+ * @param {number[]} b RGB (0-255)
+ * @param {number} t b の割合 (0-1)
+ */
+function kmMixRgb(a, b, t) {
+    const out = [0, 0, 0];
+    for (let i = 0; i < 3; i++) {
+        const ra = Math.min(0.99, Math.max(0.004, a[i] / 255));
+        const rb = Math.min(0.99, Math.max(0.004, b[i] / 255));
+        const ksA = (1 - ra) ** 2 / (2 * ra);
+        const ksB = (1 - rb) ** 2 / (2 * rb);
+        const ks = ksA * (1 - t) + ksB * t;
+        const r = 1 + ks - Math.sqrt(ks * ks + 2 * ks);
+        out[i] = Math.round(r * 255);
+    }
+    return out;
+}
+
+/**
+ * display キャンバスの小領域を平均して、筆の下にある色を拾う。
+ * (display = base + 進行中ストロークの合成なので、描いた直後の色も拾える)
+ */
+function sampleSurfaceColor(surface, cx, cy, radius) {
+    const w = surface.displayCanvas.width;
+    const h = surface.displayCanvas.height;
+    const r = Math.max(2, Math.min(10, radius * 0.3));
+    const x0 = Math.max(0, Math.floor(cx - r));
+    const y0 = Math.max(0, Math.floor(cy - r));
+    const x1 = Math.min(w, Math.ceil(cx + r));
+    const y1 = Math.min(h, Math.ceil(cy + r));
+    if (x1 - x0 < 1 || y1 - y0 < 1) return null;
+    const data = surface.displayCtx.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+    let rr = 0, gg = 0, bb = 0, n = 0;
+    for (let i = 0; i < data.length; i += 8) { // 1ピクセルおきに間引き
+        rr += data[i];
+        gg += data[i + 1];
+        bb += data[i + 2];
+        n++;
+    }
+    return n ? [rr / n, gg / n, bb / n] : null;
+}
+
+/**
+ * すいさい: にじんだソフトエッジのスタンプを線分に沿って打つ。
+ * - 本体はランダムに揺らいだ放射グラデーション
+ * - ときどき衛星ブロブを散らして「にじみ」を出す
+ * - 外周に少し濃いリング (顔料がフチに溜まる水彩特有のエッジ)
+ * - 細かい粒状感 (顔料のグラニュレーション)
+ * blend='multiply' のとき重ね塗りがグレーズになり下地と混ざる。
+ */
+function watercolorOnSurface(surface, prevPx, currPx, rgb, sizePx, blend) {
+    const ctx = surface.strokeCtx;
+    const radius = Math.max(3, sizePx / 2);
+    const dark = [
+        Math.round(rgb[0] * 0.72),
+        Math.round(rgb[1] * 0.72),
+        Math.round(rgb[2] * 0.72),
+    ];
+
+    const stampAt = (x, y) => {
+        const r = radius * (0.85 + Math.random() * 0.3);
+
+        // 本体
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+        grad.addColorStop(0, rgbaStr(rgb, WATERCOLOR_ALPHA));
+        grad.addColorStop(0.7, rgbaStr(rgb, WATERCOLOR_ALPHA * 0.8));
+        grad.addColorStop(1, rgbaStr(rgb, 0));
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // にじみ (衛星ブロブ)
+        if (Math.random() < 0.45) {
+            const theta = Math.random() * Math.PI * 2;
+            const d = r * (0.5 + Math.random() * 0.5);
+            const br = r * (0.35 + Math.random() * 0.35);
+            const bx = x + Math.cos(theta) * d;
+            const by = y + Math.sin(theta) * d;
+            const g2 = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+            g2.addColorStop(0, rgbaStr(rgb, WATERCOLOR_ALPHA * 0.5));
+            g2.addColorStop(1, rgbaStr(rgb, 0));
+            ctx.fillStyle = g2;
+            ctx.beginPath();
+            ctx.arc(bx, by, br, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // エッジの濃淡
+        ctx.strokeStyle = rgbaStr(dark, 0.05);
+        ctx.lineWidth = Math.max(1, r * 0.12);
+        ctx.beginPath();
+        ctx.arc(x, y, r * 0.93, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 粒状感
+        const grains = Math.max(2, Math.floor(r / 6));
+        ctx.fillStyle = rgbaStr(dark, 0.08);
+        for (let i = 0; i < grains; i++) {
+            const gr = Math.sqrt(Math.random()) * r * 0.9;
+            const th = Math.random() * Math.PI * 2;
+            ctx.beginPath();
+            ctx.arc(x + Math.cos(th) * gr, y + Math.sin(th) * gr, 0.5 + Math.random(), 0, Math.PI * 2);
+            ctx.fill();
+        }
+    };
+
+    let minX, maxX, minY, maxY;
+    if (prevPx) {
+        const dist = Math.hypot(currPx.x - prevPx.x, currPx.y - prevPx.y);
+        const steps = Math.min(32, Math.max(1, Math.ceil(dist / Math.max(1, radius * 0.35))));
+        for (let i = 1; i <= steps; i++) {
+            const t = i / steps;
+            stampAt(prevPx.x + (currPx.x - prevPx.x) * t, prevPx.y + (currPx.y - prevPx.y) * t);
+        }
+        minX = Math.min(prevPx.x, currPx.x);
+        maxX = Math.max(prevPx.x, currPx.x);
+        minY = Math.min(prevPx.y, currPx.y);
+        maxY = Math.max(prevPx.y, currPx.y);
+    } else {
+        stampAt(currPx.x, currPx.y);
+        minX = maxX = currPx.x;
+        minY = maxY = currPx.y;
+    }
+
+    surface.hasStroke = true;
+    surface.strokeOpacity = 1;
+    surface.strokeBlend = blend;
+
+    const w = surface.baseCanvas.width;
+    const h = surface.baseCanvas.height;
+    const pad = radius * 1.9 + 3;
+    refreshDisplay(surface,
+        Math.max(0, Math.floor(minX - pad)),
+        Math.max(0, Math.floor(minY - pad)),
+        Math.min(w, Math.ceil(maxX + pad)) - Math.max(0, Math.floor(minX - pad)),
+        Math.min(h, Math.ceil(maxY + pad)) - Math.max(0, Math.floor(minY - pad)),
+    );
+}
+
 /**
  * きらきら: 選択色と白を混ぜた輝点をランダムに散らす。
  */
@@ -448,16 +622,20 @@ function grassOnSurface(surface, currPx, colorSpec, sizePx, opacity) {
 function commitStroke(surface) {
     if (!surface.hasStroke) return;
     surface.baseCtx.globalAlpha = surface.strokeOpacity;
+    surface.baseCtx.globalCompositeOperation = surface.strokeBlend ?? 'source-over';
     surface.baseCtx.drawImage(surface.strokeCanvas, 0, 0);
+    surface.baseCtx.globalCompositeOperation = 'source-over';
     surface.baseCtx.globalAlpha = 1.0;
     surface.strokeCtx.clearRect(0, 0, surface.strokeCanvas.width, surface.strokeCanvas.height);
     surface.hasStroke = false;
+    surface.strokeBlend = 'source-over';
 }
 
 function discardStroke(surface) {
     if (!surface.hasStroke) return;
     surface.strokeCtx.clearRect(0, 0, surface.strokeCanvas.width, surface.strokeCanvas.height);
     surface.hasStroke = false;
+    surface.strokeBlend = 'source-over';
 }
 
 function clearSurface(surface) {
@@ -475,7 +653,7 @@ function disposeSurface(surface) {
     surface.material.dispose();
 }
 
-export { createPaintSurface, paintOnSurface, sprayOnSurface, stampShapeOnSurface, glitterOnSurface, bristleOnSurface, grassOnSurface, commitStroke, clearSurface, disposeSurface, STROKE_OPACITY };
+export { createPaintSurface, paintOnSurface, sprayOnSurface, stampShapeOnSurface, glitterOnSurface, bristleOnSurface, grassOnSurface, watercolorOnSurface, commitStroke, clearSurface, disposeSurface, STROKE_OPACITY };
 
 export class PaintableModel {
     /**
@@ -544,12 +722,41 @@ export class PaintableModel {
     }
 
     clear() {
+        // GPUシミュレーションの濡れた絵の具・砂などがこのモデルに乗っていたら捨てる
+        for (const sim of allSims()) {
+            if (this._getAllSurfaces().includes(sim.attachedSurface)) sim.discardWet();
+        }
         for (const s of this._getAllSurfaces()) clearSurface(s);
     }
 
-    beginStroke() {}
+    beginStroke({ tool } = {}) {
+        // すいさい用: 筆が運んでいる絵の具の色 (ストロークごとにリセット)
+        this._wetColor = null;
+        // ゆびのばし2Dフォールバック用: 引きずっている色
+        this._smearColor = null;
+        // GPUシム用: 最初のスタンプ直前にスナップショットを取る予約
+        this._wcNeedSnapshot = tool === 'watercolor';
+        this._wcUsedSim = false;
+        this._smNeedSnapshot = tool === 'smudge';
+        this._smUsedSim = false;
+        this._sandNeedSnapshot = tool === 'sand';
+        this._sandUsedSim = false;
+    }
 
     cancelStroke() {
+        // GPUシムのストロークはスナップショットへ巻き戻す
+        if (this._wcUsedSim) {
+            getWatercolorSim()?.restore();
+            this._wcUsedSim = false;
+        }
+        if (this._smUsedSim) {
+            getSmudgeSim()?.restore();
+            this._smUsedSim = false;
+        }
+        if (this._sandUsedSim) {
+            getSandSim()?.restore();
+            this._sandUsedSim = false;
+        }
         for (const s of this._getAllSurfaces()) discardStroke(s);
         for (const s of this._getAllSurfaces()) {
             refreshDisplay(s, 0, 0, s.displayCanvas.width, s.displayCanvas.height);
@@ -581,6 +788,135 @@ export class PaintableModel {
         glitterOnSurface(hit.surface, hit.currPx.x, hit.currPx.y, color, sizePx);
     }
 
+    /**
+     * すいさい。GPUシミュレーションが使えるときはそちらへ水と顔料を流し込み、
+     * 使えない環境では 2D ウェット・ピックアップ描画にフォールバックする。
+     */
+    watercolor(intersection, prev, color, sizePx) {
+        const hit = this._resolveHit(intersection, prev);
+        if (!hit) return prev ?? null;
+
+        const sim = getWatercolorSim();
+        if (sim) {
+            const surface = hit.surface;
+            const w = surface.baseCanvas.width;
+            const h = surface.baseCanvas.height;
+            settleOtherSims(surface, sim);
+            sim.attachSurface(surface);
+            if (this._wcNeedSnapshot) {
+                sim.snapshot();
+                this._wcNeedSnapshot = false;
+            }
+            this._wcUsedSim = true;
+            const uv = { x: hit.currPx.x / w, y: 1 - hit.currPx.y / h };
+            const prevUv = hit.prevPx
+                ? { x: hit.prevPx.x / w, y: 1 - hit.prevPx.y / h }
+                : null;
+            const brushRgb = sampleColorRgb(color, hit.currPx.x, hit.currPx.y, w, h);
+            sim.splat(uv, prevUv, (sizePx / 2) / w, brushRgb);
+            return hit.nextPrev;
+        }
+
+        return this._watercolor2D(hit, prev, color, sizePx);
+    }
+
+    /**
+     * 2D フォールバック: 下地の色を拾いながら描く (ウェット・ピックアップ)。
+     * 拾った色は KM 混色で筆の色と混ざり、引きずるほど下地の色が乗る。
+     * ほぼ白の筆は「水で薄める」扱いにして通常合成 (multiply だと白は無効果のため)。
+     */
+    _watercolor2D(hit, prev, color, sizePx) {
+        const surface = hit.surface;
+        const w = surface.baseCanvas.width;
+        const h = surface.baseCanvas.height;
+        const brushRgb = sampleColorRgb(color, hit.currPx.x, hit.currPx.y, w, h);
+
+        let carried = this._wetColor ?? brushRgb;
+        const picked = sampleSurfaceColor(surface, hit.currPx.x, hit.currPx.y, sizePx / 2);
+        if (picked) carried = kmMixRgb(carried, picked, WATERCOLOR_PICKUP);
+        carried = kmMixRgb(carried, brushRgb, WATERCOLOR_REFRESH);
+        this._wetColor = carried;
+
+        const lum = (brushRgb[0] * 0.299 + brushRgb[1] * 0.587 + brushRgb[2] * 0.114);
+        const blend = lum > 235 ? 'source-over' : 'multiply';
+        watercolorOnSurface(surface, hit.prevPx, hit.currPx, carried, sizePx, blend);
+        return hit.nextPrev;
+    }
+
+    /**
+     * ゆびのばし。GPUワープが使えるときは display を取り込んで引きずり、
+     * 使えない環境では下地の色を拾って引き伸ばす2D描画にフォールバックする。
+     */
+    smudge(intersection, prev, sizePx) {
+        const hit = this._resolveHit(intersection, prev);
+        if (!hit) return prev ?? null;
+        const surface = hit.surface;
+
+        const sim = getSmudgeSim();
+        if (sim) {
+            settleOtherSims(surface, sim);
+            const w = surface.baseCanvas.width;
+            const h = surface.baseCanvas.height;
+            sim.attachSurface(surface);
+            if (this._smNeedSnapshot) {
+                sim.snapshot();
+                this._smNeedSnapshot = false;
+            }
+            this._smUsedSim = true;
+            const uv = { x: hit.currPx.x / w, y: 1 - hit.currPx.y / h };
+            const prevUv = hit.prevPx
+                ? { x: hit.prevPx.x / w, y: 1 - hit.prevPx.y / h }
+                : null;
+            sim.splat(uv, prevUv, (sizePx / 2) / w);
+            return hit.nextPrev;
+        }
+
+        // 2D フォールバック: 下地の色を拾って進行方向へ引き伸ばす
+        const picked = sampleSurfaceColor(surface, hit.currPx.x, hit.currPx.y, sizePx / 2);
+        if (picked) {
+            this._smearColor = this._smearColor
+                ? kmMixRgb(this._smearColor, picked, 0.6)
+                : picked;
+        }
+        if (this._smearColor && hit.prevPx) {
+            watercolorOnSurface(surface, hit.prevPx, hit.currPx, this._smearColor, sizePx, 'source-over');
+        }
+        return hit.nextPrev;
+    }
+
+    /**
+     * すな。砂を振りかけ、UVの下方向へ流れ落ちて積もる。
+     * GPUシミュレーション非対応環境ではスプレーにフォールバック。
+     */
+    sand(intersection, prev, color, sizePx) {
+        const hit = this._resolveHit(intersection, prev);
+        if (!hit) return prev ?? null;
+        const surface = hit.surface;
+        const w = surface.baseCanvas.width;
+        const h = surface.baseCanvas.height;
+
+        const sim = getSandSim();
+        if (!sim) {
+            sprayOnSurface(surface, hit.currPx.x, hit.currPx.y, color, sizePx);
+            return hit.nextPrev;
+        }
+
+        settleOtherSims(surface, sim);
+        sim.attachSurface(surface);
+        if (this._sandNeedSnapshot) {
+            sim.snapshot();
+            this._sandNeedSnapshot = false;
+        }
+        this._sandUsedSim = true;
+        const uv = { x: hit.currPx.x / w, y: 1 - hit.currPx.y / h };
+        const prevUv = hit.prevPx
+            ? { x: hit.prevPx.x / w, y: 1 - hit.prevPx.y / h }
+            : null;
+        const rgb = sampleColorRgb(color, hit.currPx.x, hit.currPx.y, w, h);
+        sim.splat(uv, prevUv, (sizePx / 2) / w, rgb);
+        return hit.nextPrev;
+    }
+
     bristle(intersection, prev, color, sizePx, opacity = 1) {
         const hit = this._resolveHit(intersection, prev);
         if (!hit) return prev ?? null;
@@ -603,6 +939,11 @@ export class PaintableModel {
 
     endStroke() {
         for (const s of this._getAllSurfaces()) commitStroke(s);
+        // ゆびのばしは乾き待ちがないのでストローク終了時に即焼き込む
+        if (this._smUsedSim) {
+            getSmudgeSim()?.bakeNow();
+            this._smUsedSim = false;
+        }
     }
 
     dispose() {

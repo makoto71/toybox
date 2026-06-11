@@ -14,8 +14,11 @@
 
 const PEN_OPACITY = 0.6;
 const SPRAY_SIZE_MULT = 4;
+const WATERCOLOR_SIZE_MULT = 1.6;
 const PATTERN_INTERVAL_MULT = 1.4;
 const GLITTER_SIZE_MULT = 1.8;
+const SMUDGE_SIZE_MULT = 2.4;
+const SAND_SIZE_MULT = 1.6;
 
 // 2本指ジェスチャの分類しきい値
 const CLASSIFY_TIME_MS = 150;          // この時間が経つか…
@@ -342,6 +345,12 @@ export class Painter {
         } else if (tool === 'glitter') {
             model.glitter(hit, color, size * GLITTER_SIZE_MULT);
             this.paintPrev = null;
+        } else if (tool === 'watercolor') {
+            this.paintPrev = model.watercolor(hit, this.paintPrev, color, size * WATERCOLOR_SIZE_MULT);
+        } else if (tool === 'smudge') {
+            this.paintPrev = model.smudge(hit, this.paintPrev, size * SMUDGE_SIZE_MULT);
+        } else if (tool === 'sand') {
+            this.paintPrev = model.sand(hit, this.paintPrev, color, size * SAND_SIZE_MULT);
         } else if (tool === 'bristle') {
             this.paintPrev = model.bristle(hit, this.paintPrev, color, size, PEN_OPACITY);
         } else if (tool === 'grass') {

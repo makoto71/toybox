@@ -20,6 +20,9 @@ const DEFAULT_SIZE = 40;
 
 const BRUSH_ICONS = {
     pen: '✏️',
+    watercolor: '💧',
+    smudge: '👆',
+    sand: '⏳',
     spray: '💨',
     glitter: '✨',
     bristle: '🖌',
