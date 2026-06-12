@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CarDriver, CRUISE, DIRS } from './driver.js';
+import { collectWheels, spinWheels } from './wheels.js';
 
 // Kenney系GLB (sedan等) は外部テクスチャ Textures/colormap.png を参照していて
 // リポジトリに同梱していないため、色がマテリアルに埋め込まれたモデルだけ使う
@@ -146,17 +147,10 @@ export class NpcFleet {
         root.position.set(-center.x, -box.min.y + 0.02, -center.z);
         rig.add(root);
 
-        const wheels = [];
         root.traverse((o) => {
             if (o.isMesh) o.castShadow = true;
-            if (!o.isMesh && !o.isGroup) return;
-            if (!/wheel|tire/i.test(o.name)) return;
-            const wb = new THREE.Box3().setFromObject(o);
-            if (wb.isEmpty()) return;
-            const ws = new THREE.Vector3();
-            wb.getSize(ws);
-            wheels.push({ obj: o, radius: Math.max(0.05, ws.y / 2), baseRotX: o.rotation.x });
         });
+        const wheels = collectWheels(root);
 
         const lights = makeCarLights(size);
         lights.visible = this._lightsOn;
@@ -180,9 +174,7 @@ export class NpcFleet {
             car.driver.update(dt);
             car.rig.position.copy(car.driver.pos);
             car.rig.rotation.y = car.driver.yaw;
-            for (const w of car.wheels) {
-                w.obj.rotation.x = w.baseRotX + (car.driver.dist / w.radius) % (Math.PI * 2);
-            }
+            spinWheels(car.wheels, car.driver.dist);
         }
     }
 

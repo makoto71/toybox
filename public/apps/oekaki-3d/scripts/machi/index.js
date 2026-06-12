@@ -15,6 +15,7 @@ import { buildCity } from './city.js';
 import { CarDriver, CRUISE, Traffic } from './driver.js';
 import { CameraDirector } from './cameras.js';
 import { NpcFleet, makeCarLights } from './npc.js';
+import { collectWheels, spinWheels, resetWheels } from './wheels.js';
 import { mulberry32, makeSkyTexture } from './textures.js';
 
 const MAX_PIXEL_RATIO = 1.8; // モバイル負荷対策
@@ -156,17 +157,7 @@ export class MachiMode {
         this.tilt.add(this.carLights);
 
         // ホイール検出 (見つかれば走行に合わせて回す)
-        this.wheels = [];
-        mesh.traverse((o) => {
-            if (!o.isMesh && !o.isGroup) return;
-            if (!/wheel|tire/i.test(o.name)) return;
-            const wb = new THREE.Box3().setFromObject(o);
-            if (wb.isEmpty()) return;
-            const ws = new THREE.Vector3();
-            wb.getSize(ws);
-            const radius = Math.max(0.05, ws.y / 2);
-            this.wheels.push({ obj: o, radius, baseRotX: o.rotation.x });
-        });
+        this.wheels = collectWheels(mesh);
 
         // モデルに影を落とさせる (復元用に記録)
         mesh.traverse((o) => {
@@ -268,7 +259,7 @@ export class MachiMode {
         }
         for (const m of this.shadowedModelMeshes) m.castShadow = false;
         this.shadowedModelMeshes = [];
-        for (const w of this.wheels) w.obj.rotation.x = w.baseRotX;
+        resetWheels(this.wheels);
         this.wheels = [];
 
         // NPCとユーザー車のライトを破棄
@@ -363,9 +354,7 @@ export class MachiMode {
         );
 
         // ホイール回転
-        for (const w of this.wheels) {
-            w.obj.rotation.x = w.baseRotX + (this.driver.dist / w.radius) % (Math.PI * 2);
-        }
+        spinWheels(this.wheels, this.driver.dist);
 
         // 太陽 (シャドウカメラ) を車に追従させる
         this._sunTarget.position.copy(this.driver.pos);
