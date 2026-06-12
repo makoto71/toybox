@@ -87,9 +87,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 painter?.setPaintEnabled(true);
             }
             ui.setMachiMode(machi.active, machi.cameraLabel);
+            ui.setMachiTime(machi.timeOfDay);
         },
         onMachiCameraCycle() {
             return machi.cycleCamera();
+        },
+        onMachiTimeChange(id) {
+            machi.setTimeOfDay(id);
         },
         onModeExit() {
             if (machi.active) {

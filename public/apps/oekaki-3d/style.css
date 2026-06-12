@@ -106,6 +106,76 @@ body.drive-mode .stage canvas {
     cursor: grab;
 }
 
+/* まちモード: メニューボタン (左上) とメニューモーダル */
+.machi-menu {
+    position: absolute;
+    top: 1.25rem;
+    left: 1.25rem;
+    z-index: 1000;
+    width: 2.8rem;
+    height: 2.8rem;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    color: #555;
+    font-size: 1.6rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    line-height: 1;
+    padding: 0;
+}
+.machi-menu[hidden] { display: none; }
+.machi-menu:active { transform: scale(0.95); }
+
+.time-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    width: 100%;
+    max-width: 22rem;
+    box-sizing: border-box;
+    padding: 0.3rem;
+}
+
+.time-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    background: #f8f9fb;
+    border: 3px solid transparent;
+    border-radius: 14px;
+    padding: 0.7rem 0.3rem;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #2F3542;
+    transition: all 0.15s;
+}
+
+.time-card:hover {
+    background: #eef1f7;
+    transform: translateY(-2px);
+}
+
+.time-card:active { transform: translateY(0); }
+
+.time-card.active {
+    background: #e8f5e9;
+    border-color: #2ED573;
+}
+
+.time-card-icon {
+    font-size: 2.2rem;
+    line-height: 1;
+}
+
 /* ================ AR mode (WebXR dom-overlay) ================ */
 #ar-overlay {
     position: fixed;

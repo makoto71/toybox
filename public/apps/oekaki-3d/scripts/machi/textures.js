@@ -245,38 +245,90 @@ export function makeWindowTextures(renderer) {
     return textures;
 }
 
-/** 空: 縦グラデーション + 太陽光彩 + 雲 (equirect でシーン背景に) */
-export function makeSkyTexture(renderer) {
+/**
+ * 空: 縦グラデーション + 太陽/月 + 雲 (equirect でシーン背景に)。
+ * 地平線の色は machi/index.js の各時間帯のフォグ色と一致させること。
+ * @param {'asa'|'yugata'|'yoru'} time
+ */
+export function makeSkyTexture(renderer, time = 'asa') {
     const W = 1024, H = 512;
     const c = makeCanvas(W, H);
     const ctx = c.getContext('2d');
     const rng = mulberry32(0x5C4);
 
+    const STOPS = {
+        asa: [
+            [0.0, '#3f76c4'], [0.30, '#6f9fd8'], [0.48, '#b5cde6'],
+            [0.56, '#e6edf4'], [0.62, '#dfe8f2'], [1.0, '#d4dde8'],
+        ],
+        yugata: [
+            [0.0, '#3a4a8a'], [0.26, '#7a6aa6'], [0.42, '#c9849a'],
+            [0.52, '#f0a878'], [0.58, '#eec39a'], [1.0, '#d8a884'],
+        ],
+        yoru: [
+            [0.0, '#050a18'], [0.32, '#0a1226'], [0.50, '#0d1628'],
+            [0.58, '#101a2c'], [1.0, '#0c1422'],
+        ],
+    };
     const grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0.0, '#3f76c4');
-    grad.addColorStop(0.30, '#6f9fd8');
-    grad.addColorStop(0.48, '#b5cde6');
-    grad.addColorStop(0.56, '#e6edf4');   // 地平線
-    grad.addColorStop(0.62, '#dfe8f2');   // フォグ色と一致させる
-    grad.addColorStop(1.0, '#d4dde8');
+    for (const [p, col] of STOPS[time]) grad.addColorStop(p, col);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
 
-    // 太陽の光彩
-    const sx = W * 0.64, sy = H * 0.18;
-    const sun = ctx.createRadialGradient(sx, sy, 0, sx, sy, 130);
-    sun.addColorStop(0, 'rgba(255,252,235,0.95)');
-    sun.addColorStop(0.25, 'rgba(255,248,220,0.5)');
-    sun.addColorStop(1, 'rgba(255,248,220,0)');
-    ctx.fillStyle = sun;
-    ctx.fillRect(0, 0, W, H);
+    if (time === 'yoru') {
+        // 星 (地平線より上)
+        for (let i = 0; i < 240; i++) {
+            const x = rng() * W;
+            const y = rng() * H * 0.52;
+            const r = rng() < 0.12 ? 1.6 : 0.9;
+            ctx.fillStyle = `rgba(255,255,255,${0.35 + rng() * 0.6})`;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // 月 + 光彩
+        const mx = W * 0.62, my = H * 0.17;
+        const halo = ctx.createRadialGradient(mx, my, 0, mx, my, 90);
+        halo.addColorStop(0, 'rgba(220,230,255,0.5)');
+        halo.addColorStop(1, 'rgba(220,230,255,0)');
+        ctx.fillStyle = halo;
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#f2f4e8';
+        ctx.beginPath();
+        ctx.arc(mx, my, 22, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(180,190,200,0.45)';
+        for (const [ox, oy, or] of [[-7, -4, 5], [6, 7, 4], [3, -8, 3]]) {
+            ctx.beginPath();
+            ctx.arc(mx + ox, my + oy, or, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    } else {
+        // 太陽の光彩 (夕方は低く・大きく・赤く)
+        const sx = time === 'yugata' ? W * 0.13 : W * 0.64;
+        const sy = time === 'yugata' ? H * 0.46 : H * 0.18;
+        const sr = time === 'yugata' ? 180 : 130;
+        const sun = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+        if (time === 'yugata') {
+            sun.addColorStop(0, 'rgba(255,210,150,0.98)');
+            sun.addColorStop(0.18, 'rgba(255,170,100,0.65)');
+            sun.addColorStop(1, 'rgba(255,160,90,0)');
+        } else {
+            sun.addColorStop(0, 'rgba(255,252,235,0.95)');
+            sun.addColorStop(0.25, 'rgba(255,248,220,0.5)');
+            sun.addColorStop(1, 'rgba(255,248,220,0)');
+        }
+        ctx.fillStyle = sun;
+        ctx.fillRect(0, 0, W, H);
+    }
 
-    // 雲 (楕円の重なり)
-    for (let i = 0; i < 15; i++) {
+    // 雲 (楕円の重なり)。夜は少なく薄く、夕方は下面が焼ける
+    const cloudCount = time === 'yoru' ? 5 : 15;
+    for (let i = 0; i < cloudCount; i++) {
         const cx = rng() * W;
         const cy = H * (0.12 + rng() * 0.32);
         const scale = 0.6 + rng() * 1.3;
-        const alpha = 0.35 + rng() * 0.4;
+        const alpha = (time === 'yoru' ? 0.08 : 0.35) + rng() * (time === 'yoru' ? 0.06 : 0.4);
         const puffs = 4 + (rng() * 4) | 0;
         for (let p = 0; p < puffs; p++) {
             const px = cx + (rng() - 0.5) * 90 * scale;
@@ -284,9 +336,15 @@ export function makeSkyTexture(renderer) {
             const rx = (22 + rng() * 30) * scale;
             const ry = rx * (0.32 + rng() * 0.2);
             const g = ctx.createRadialGradient(px, py, 0, px, py, rx);
-            g.addColorStop(0, `rgba(255,255,255,${alpha})`);
-            g.addColorStop(0.7, `rgba(252,253,255,${alpha * 0.5})`);
-            g.addColorStop(1, 'rgba(255,255,255,0)');
+            if (time === 'yugata') {
+                g.addColorStop(0, `rgba(255,225,205,${alpha})`);
+                g.addColorStop(0.7, `rgba(245,170,140,${alpha * 0.55})`);
+                g.addColorStop(1, 'rgba(245,170,140,0)');
+            } else {
+                g.addColorStop(0, `rgba(255,255,255,${alpha})`);
+                g.addColorStop(0.7, `rgba(252,253,255,${alpha * 0.5})`);
+                g.addColorStop(1, 'rgba(255,255,255,0)');
+            }
             ctx.save();
             ctx.translate(px, py);
             ctx.scale(1, ry / rx);
@@ -302,4 +360,66 @@ export function makeSkyTexture(renderer) {
     const tex = toTexture(c, renderer, { repeat: false });
     tex.mapping = THREE.EquirectangularReflectionMapping;
     return tex;
+}
+
+/**
+ * 夜の窓明かり用 emissiveMap (makeWindowTextures の3タイプに対応)。
+ * 4x4 窓セル (512px) に、ところどころ灯った窓を描く。
+ * texture.repeat = 0.25 を設定済みなので、壁UV (1単位 = 1窓) にそのまま使える。
+ * @returns {THREE.Texture[]} 3種類
+ */
+export function makeNightWindowTextures(renderer) {
+    const CELL = 128, GRID = 4, S = CELL * GRID;
+    const rng = mulberry32(0x90171);
+
+    // 各タイプのガラス矩形 (makeWindowTextures のセル内座標と一致させる)
+    const GLASS_RECTS = [
+        [[14, 18, 100, 88]],
+        [[22, 16, 84, 62]],
+        [[18, 20, 38, 88], [72, 20, 38, 88]],
+    ];
+
+    return GLASS_RECTS.map((rects) => {
+        const c = makeCanvas(S, S);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, S, S);
+        for (let gy = 0; gy < GRID; gy++) {
+            for (let gx = 0; gx < GRID; gx++) {
+                for (const [x, y, w, h] of rects) {
+                    const roll = rng();
+                    if (roll > 0.5) continue; // 半分は消灯
+                    const dim = roll > 0.32;  // 一部はぼんやり
+                    const ox = gx * CELL, oy = gy * CELL;
+                    const g = ctx.createLinearGradient(ox + x, oy + y, ox + x, oy + y + h);
+                    if (dim) {
+                        g.addColorStop(0, '#4a4030');
+                        g.addColorStop(1, '#383023');
+                    } else {
+                        g.addColorStop(0, '#ffd98c');
+                        g.addColorStop(1, '#e8a850');
+                    }
+                    ctx.fillStyle = g;
+                    ctx.fillRect(ox + x, oy + y, w, h);
+                }
+            }
+        }
+        const tex = toTexture(c, renderer);
+        tex.repeat.set(1 / GRID, 1 / GRID);
+        return tex;
+    });
+}
+
+/** 円形グロー (街灯の光だまり・加算合成用) */
+export function makeGlowTexture(renderer) {
+    const S = 128;
+    const c = makeCanvas(S, S);
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    g.addColorStop(0, 'rgba(255,255,255,0.9)');
+    g.addColorStop(0.4, 'rgba(255,255,255,0.35)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, S, S);
+    return toTexture(c, renderer, { repeat: false });
 }

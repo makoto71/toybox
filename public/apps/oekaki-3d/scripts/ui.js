@@ -83,6 +83,7 @@ export class UI {
         this._setupModelOverlay();
         this._setupDriveExit();
         this._setupMachiCamera();
+        this._setupMachiMenu();
         this._updateColorTriggerPreview();
         this._updateBrushTriggerPreview();
     }
@@ -94,19 +95,29 @@ export class UI {
         if (exit) exit.hidden = !active;
     }
 
-    /** まちモード: 塗り系UIを隠し、退出ボタン + カメラ切り替えボタンを出す */
+    /** まちモード: 塗り系UIを隠し、退出 + カメラ切り替え + まちメニューを出す */
     setMachiMode(active, cameraLabel) {
         document.body.classList.toggle('drive-mode', active);
         const exit = document.getElementById('drive-exit');
         if (exit) exit.hidden = !active;
         const camBtn = document.getElementById('machi-camera');
         if (camBtn) camBtn.hidden = !active;
+        const menuBtn = document.getElementById('machi-menu');
+        if (menuBtn) menuBtn.hidden = !active;
+        if (!active) this._closeOverlay('machi-overlay');
         if (active && cameraLabel) this.setMachiCameraLabel(cameraLabel);
     }
 
     setMachiCameraLabel(label) {
         const el = document.getElementById('machi-camera-label');
         if (el) el.textContent = label;
+    }
+
+    /** まちメニューの時間帯カードの選択表示を同期する */
+    setMachiTime(id) {
+        document.querySelectorAll('.time-card').forEach((b) => {
+            b.classList.toggle('active', b.dataset.time === id);
+        });
     }
 
     getState() {
@@ -622,6 +633,24 @@ export class UI {
         btn.addEventListener('click', () => {
             const label = this.cb.onMachiCameraCycle?.();
             if (label) this.setMachiCameraLabel(label);
+        });
+    }
+
+    _setupMachiMenu() {
+        const btn = document.getElementById('machi-menu');
+        if (!btn) return;
+        btn.addEventListener('click', () => this._openOverlay('machi-overlay'));
+
+        const overlay = document.getElementById('machi-overlay');
+        overlay.querySelectorAll('[data-close="machi"]').forEach((el) => {
+            el.addEventListener('click', () => this._closeOverlay('machi-overlay'));
+        });
+        overlay.querySelectorAll('.time-card').forEach((card) => {
+            card.addEventListener('click', () => {
+                this.setMachiTime(card.dataset.time);
+                this.cb.onMachiTimeChange?.(card.dataset.time);
+                this._closeOverlay('machi-overlay');
+            });
         });
     }
 

@@ -6,6 +6,10 @@
  *
  * 座標系: 碁盤目の道路網。縦道路 (NS, Z方向に伸びる) が roadsX の各 x に、
  * 横道路 (EW) が roadsZ の各 z に走る。左側通行。
+ *
+ * seed から道路間隔・街区のタイプ (公園/商店街/ランドマーク)・建物が決まる。
+ * 道路網はすべて graph (roads 配列) 経由で driver / cameras と共有されるので、
+ * 生成結果と走行ロジックは常に一致する。
  */
 
 import * as THREE from 'three';
@@ -16,22 +20,23 @@ import {
     makeConcreteTexture,
     makeGrassTexture,
     makeWindowTextures,
-    makeSkyTexture,
+    makeNightWindowTextures,
+    makeGlowTexture,
 } from './textures.js';
 
 // ---- レイアウト定数 (graph として driver / cameras と共有) ----
-const SPACING = 26;            // 道路中心線の間隔
-const ROADS = [-39, -13, 13, 39];
 const RW = 2.2;                // 車道の半幅
 const LANE = 1.1;              // 車線中心の中心線からのオフセット (左側通行)
 const STOP = 4.2;              // 停止線の交差点中心からの距離
 const SIDEWALK = 1.6;          // 歩道幅
 const CURB_H = 0.12;           // 歩道の縁石高さ
-const ROAD_END = 52;           // 道路の端 (市街地の外へ少し伸ばす)
 const FLOOR_H = 1.7;           // 建物1階分の高さ
 
 const WALL_TINTS = [0xf2efe9, 0xe9e4d8, 0xdfe3e8, 0xead9c8, 0xd9c6b0, 0xc89e87, 0xc3cccf, 0xe5d3d0];
 const ROOF_TINTS = [0x9a9da1, 0x8d9094, 0xa8aaac, 0x96918a];
+// 商店街の店先 (壁はパステル、ひさしはビビッド)
+const SHOP_TINTS = [0xf7e3c8, 0xf0d6d6, 0xd8e8d4, 0xd6e0ef, 0xf3eccf];
+const AWNING_TINTS = [0xe05548, 0x2e9e60, 0x3678c8, 0xf0a030, 0xd45f9e, 0x40a8a0];
 
 // ---- ジオメトリヘルパー ----
 
@@ -164,25 +169,56 @@ class SignalController {
 
 /**
  * @param {THREE.WebGLRenderer} renderer
- * @returns {{ group: THREE.Group, graph: object, signals: SignalController, skyTexture: THREE.Texture }}
+ * @param {number} seed 街の生成シード
+ * @returns {{ group: THREE.Group, graph: object, signals: SignalController,
+ *             nightGroup: THREE.Group, windowMats: THREE.MeshLambertMaterial[] }}
  */
-export function buildCity(renderer) {
-    const rng = mulberry32(0x70AD);
+export function buildCity(renderer, seed = 0x70AD) {
+    const rng = mulberry32(seed);
     const group = new THREE.Group();
+
+    // ---- 道路網: 間隔をシードで揺らす (中心が原点になるように配置) ----
+    const gaps = [0, 0, 0].map(() => 23 + rng() * 8);
+    const total = gaps[0] + gaps[1] + gaps[2];
+    const ROADS = [
+        -total / 2,
+        -total / 2 + gaps[0],
+        -total / 2 + gaps[0] + gaps[1],
+        total / 2,
+    ];
+    const ROAD_END = total / 2 + 13; // 道路の端 (市街地の外へ少し伸ばす)
+
+    // 特別な街区 (3x3): 公園は必ず1つ、商店街・ランドマークは公園と重ならない位置
+    const blockKeys = [];
+    for (let i = 0; i < ROADS.length - 1; i++) {
+        for (let j = 0; j < ROADS.length - 1; j++) blockKeys.push({ i, j });
+    }
+    const pickBlock = () => blockKeys.splice((rng() * blockKeys.length) | 0, 1)[0];
+    const parkBlock = pickBlock();
+    const shopBlock = pickBlock();
+    const landmarkBlock = pickBlock();
 
     const texAsphalt = makeAsphaltTexture(renderer);
     const texConcrete = makeConcreteTexture(renderer);
     const texGrass = makeGrassTexture(renderer);
     const texWindows = makeWindowTextures(renderer);
-    const skyTexture = makeSkyTexture(renderer);
+    const texNightWindows = makeNightWindowTextures(renderer);
+    const texGlow = makeGlowTexture(renderer);
 
     const matAsphalt = new THREE.MeshLambertMaterial({ map: texAsphalt });
     const matConcrete = new THREE.MeshLambertMaterial({ map: texConcrete });
     const matGrass = new THREE.MeshLambertMaterial({ map: texGrass });
     const matMark = new THREE.MeshLambertMaterial({ color: 0xe9e9e6 });
     const matSteel = new THREE.MeshLambertMaterial({ color: 0x3a4148 });
-    const matWalls = texWindows.map((t) => new THREE.MeshLambertMaterial({ map: t, vertexColors: true }));
+    // 夜は emissive を白に上げると窓明かりが灯る (emissiveMap は4x4セルでリピート)
+    const matWalls = texWindows.map((t, i) => new THREE.MeshLambertMaterial({
+        map: t,
+        vertexColors: true,
+        emissive: 0x000000,
+        emissiveMap: texNightWindows[i],
+    }));
     const matRoof = new THREE.MeshLambertMaterial({ map: texConcrete, vertexColors: true });
+    const matAwning = new THREE.MeshLambertMaterial({ vertexColors: true });
 
     // --- 地面 (草地) ---
     {
@@ -274,16 +310,14 @@ export function buildCity(renderer) {
         markGeos.forEach((g) => g.dispose());
     }
 
-    // --- 街区 (歩道スラブ + 建物 or 公園) ---
+    // --- 街区 (歩道スラブ + 建物 or 公園 or 商店街) ---
     const walkGeos = [];
     const wallGeosByType = [[], [], []];
     const roofGeos = [];
+    const awningGeos = [];
     const treeSpots = []; // {x, z, y}
     const parkGeos = [];
     let pondMesh = null;
-
-    // 公園にする街区 (1つ)
-    const parkBlock = { i: 0, j: 2 };
 
     for (let bi = 0; bi < ROADS.length - 1; bi++) {
         for (let bj = 0; bj < ROADS.length - 1; bj++) {
@@ -292,6 +326,9 @@ export function buildCity(renderer) {
             const bw = x1 - x0, bd = z1 - z0;
             const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
             const isPark = (bi === parkBlock.i && bj === parkBlock.j);
+            const isShop = (bi === shopBlock.i && bj === shopBlock.j);
+            const isLandmark = (bi === landmarkBlock.i && bj === landmarkBlock.j);
+            let landmarkPlaced = false;
 
             // 縁石付きスラブ (公園は草の天面)
             const slab = new THREE.BoxGeometry(bw, CURB_H, bd);
@@ -313,7 +350,11 @@ export function buildCity(renderer) {
             if (isPark) {
                 // 公園: 池 + 木々
                 pondMesh = new THREE.Mesh(
-                    quadXZ(cx - 2.5, cz + 2, 7, 6, CURB_H + 0.012),
+                    quadXZ(
+                        cx + (rng() - 0.5) * 4, cz + (rng() - 0.5) * 4,
+                        5.5 + rng() * 3, 4.5 + rng() * 3,
+                        CURB_H + 0.012,
+                    ),
                     new THREE.MeshLambertMaterial({ color: 0x5ba3cf }),
                 );
                 pondMesh.receiveShadow = true;
@@ -332,24 +373,45 @@ export function buildCity(renderer) {
             const distCenter = Math.hypot(cx, cz);
             for (const qx of [-1, 1]) {
                 for (const qz of [-1, 1]) {
-                    if (rng() < 0.13) continue;
+                    if (!isShop && rng() < 0.13) continue;
                     const lotW = bw / 2 - SIDEWALK, lotD = bd / 2 - SIDEWALK;
                     const w = 5.2 + rng() * (lotW - 5.6);
                     const d = 5.2 + rng() * (lotD - 5.6);
-                    // 街の中心ほど高層に
+                    // 街の中心ほど高層に。商店街は低層、ランドマーク街区は1棟だけ高層タワー
                     const bonus = Math.max(0, 5 - distCenter / 8);
-                    const floors = Math.max(2, Math.round(2 + rng() * 3 + rng() * bonus));
+                    let floors = Math.max(2, Math.round(2 + rng() * 3 + rng() * bonus));
+                    if (isShop) floors = 1 + (rng() < 0.35 ? 1 : 0);
+                    if (isLandmark && !landmarkPlaced) {
+                        floors = 8 + ((rng() * 4) | 0);
+                        landmarkPlaced = true;
+                    }
                     const h = floors * FLOOR_H;
                     // 歩道側に寄せ気味に配置
                     const px = cx + qx * (bw / 2 - SIDEWALK - w / 2 - 0.4 - rng() * 1.2);
                     const pz = cz + qz * (bd / 2 - SIDEWALK - d / 2 - 0.4 - rng() * 1.2);
 
-                    const type = (rng() * 3) | 0;
-                    const tint = WALL_TINTS[(rng() * WALL_TINTS.length) | 0];
+                    const type = isShop ? 2 : (rng() * 3) | 0;
+                    const tint = isShop
+                        ? SHOP_TINTS[(rng() * SHOP_TINTS.length) | 0]
+                        : WALL_TINTS[(rng() * WALL_TINTS.length) | 0];
                     const walls = buildingWalls(w, d, h, floors);
                     walls.translate(px, CURB_H, pz);
                     addVertexColor(walls, tint);
                     wallGeosByType[type].push(walls);
+
+                    // 商店街: 歩道側 (街区の外周向き) にビビッドなひさし
+                    if (isShop) {
+                        const awnTint = AWNING_TINTS[(rng() * AWNING_TINTS.length) | 0];
+                        const awnY = CURB_H + FLOOR_H * 0.92;
+                        const awnZ = new THREE.BoxGeometry(w * 0.9, 0.09, 0.85);
+                        awnZ.translate(px, awnY, pz + qz * (d / 2 + 0.32));
+                        addVertexColor(awnZ, awnTint);
+                        awningGeos.push(awnZ);
+                        const awnX = new THREE.BoxGeometry(0.85, 0.09, d * 0.9);
+                        awnX.translate(px + qx * (w / 2 + 0.32), awnY, pz);
+                        addVertexColor(awnX, awnTint);
+                        awningGeos.push(awnX);
+                    }
 
                     const roofTint = ROOF_TINTS[(rng() * ROOF_TINTS.length) | 0];
                     const roof = quadXZ(px, pz, w, d, CURB_H + h);
@@ -405,12 +467,19 @@ export function buildCity(renderer) {
         roofs.receiveShadow = true;
         group.add(roofs);
         roofGeos.forEach((g) => g.dispose());
+
+        if (awningGeos.length) {
+            const awnings = new THREE.Mesh(mergeGeometries(awningGeos), matAwning);
+            awnings.castShadow = true;
+            group.add(awnings);
+            awningGeos.forEach((g) => g.dispose());
+        }
     }
 
     // --- 郊外の木 (市街地の外周、フォグに溶ける) ---
     for (let t = 0; t < 70; t++) {
         const ang = rng() * Math.PI * 2;
-        const r = 47 + rng() * 35;
+        const r = ROAD_END - 5 + rng() * 35;
         const x = Math.cos(ang) * r;
         const z = Math.sin(ang) * r;
         // 道路の延長線上は避ける
@@ -456,6 +525,7 @@ export function buildCity(renderer) {
 
     // --- 街灯 (区間の中間地点) + 信号機の柱 → 1メッシュにマージ ---
     const steelGeos = [];
+    const lampHeads = []; // {x, y, z} 夜の点灯表現用
     /** 柱 + 車道側に伸びるアーム + 灯具。(ax, az) = アームを伸ばす方向 (単位) */
     const addLamp = (x, z, ax, az) => {
         const pole = new THREE.CylinderGeometry(0.05, 0.07, 3.4, 6);
@@ -467,6 +537,7 @@ export function buildCity(renderer) {
         const head = new THREE.BoxGeometry(ax !== 0 ? 0.42 : 0.16, 0.1, ax !== 0 ? 0.16 : 0.42);
         head.translate(x + ax * 0.95, 3.29, z + az * 0.95);
         steelGeos.push(head);
+        lampHeads.push({ x: x + ax * 0.95, y: 3.22, z: z + az * 0.95 });
     };
     for (let k = 0; k < ROADS.length - 1; k++) {
         const mid = (ROADS[k] + ROADS[k + 1]) / 2;
@@ -549,14 +620,44 @@ export function buildCity(renderer) {
 
     const signals = new SignalController(lightsMesh, lightsInfo);
 
+    // --- 夜だけ表示するグループ (街灯の電球 + 路面の光だまり) ---
+    const nightGroup = new THREE.Group();
+    nightGroup.visible = false;
+    {
+        const bulbs = new THREE.InstancedMesh(
+            new THREE.SphereGeometry(0.09, 6, 5),
+            new THREE.MeshBasicMaterial({ color: 0xffe2b0 }),
+            lampHeads.length,
+        );
+        const m = new THREE.Matrix4();
+        for (let i = 0; i < lampHeads.length; i++) {
+            m.makeTranslation(lampHeads[i].x, lampHeads[i].y, lampHeads[i].z);
+            bulbs.setMatrixAt(i, m);
+        }
+        nightGroup.add(bulbs);
+
+        const poolGeos = lampHeads.map((p) => quadXZ(p.x, p.z, 4.6, 4.6, 0.035));
+        const pools = new THREE.Mesh(mergeGeometries(poolGeos), new THREE.MeshBasicMaterial({
+            map: texGlow,
+            color: 0xffc97a,
+            transparent: true,
+            opacity: 0.42,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+        }));
+        nightGroup.add(pools);
+        poolGeos.forEach((g) => g.dispose());
+    }
+    group.add(nightGroup);
+
     const graph = {
         roads: ROADS,
-        spacing: SPACING,
         RW,
         LANE,
         STOP,
         curbH: CURB_H,
+        roadEnd: ROAD_END,
     };
 
-    return { group, graph, signals, skyTexture };
+    return { group, graph, signals, nightGroup, windowMats: matWalls };
 }
