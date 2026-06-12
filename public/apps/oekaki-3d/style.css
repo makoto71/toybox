@@ -67,6 +67,37 @@ body.drive-mode .color-trigger,
 body.drive-mode .size-slider-wrap {
     display: none;
 }
+
+/* まちモード: カメラ切り替えボタン */
+.machi-camera {
+    position: absolute;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.65rem 1.3rem;
+    border: none;
+    border-radius: 999px;
+    background: white;
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 1.05rem;
+    cursor: pointer;
+    box-shadow: var(--btn-shadow);
+}
+.machi-camera[hidden] {
+    display: none;
+}
+.machi-camera:active {
+    transform: translate(-50%, 2px);
+    box-shadow: var(--btn-active-shadow);
+}
+.machi-camera-icon {
+    font-size: 1.15rem;
+}
 body.drive-mode .stage {
     background-color: #ffffff;
     background-image: none;

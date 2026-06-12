@@ -28,6 +28,7 @@
       <div class="menu-dropdown" id="menu-dropdown">
         <button class="menu-item" id="menu-model">モデルをえらぶ</button>
         <button class="menu-item" id="menu-drive">はしる</button>
+        <button class="menu-item" id="menu-machi">まち</button>
         <button class="menu-item" id="menu-ar">おく</button>
         <button class="menu-item" id="menu-fullscreen">ぜんがめん</button>
         <button class="menu-item" id="menu-clear">まっしろにもどす</button>
@@ -57,6 +58,12 @@
 
     <!-- ドライブモード退出ボタン (右上) -->
     <button class="drive-exit" id="drive-exit" hidden>もどる</button>
+
+    <!-- まちモード: カメラ切り替えボタン (下中央) -->
+    <button class="machi-camera" id="machi-camera" hidden>
+      <span class="machi-camera-icon">📷</span>
+      <span class="machi-camera-label" id="machi-camera-label">ついせき</span>
+    </button>
   </div>
 
   <!-- WebXR ARモード用オーバーレイ (dom-overlay でセッション中だけ表示) -->

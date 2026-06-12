@@ -51,6 +51,8 @@ export class WebXRARMode {
         this.placed = false;
         this.baseScale = 1;
         this._modelSize = 1;
+        /** @type {(() => void)|null} セッション終了後に呼ばれる (お絵描き側の復帰用) */
+        this.onEnd = null;
 
         /** @type {Map<number, {x:number, y:number}>} */
         this.pointers = new Map();
@@ -112,6 +114,10 @@ export class WebXRARMode {
         this.transientHitSource =
             await session.requestHitTestSourceForTransientInput?.({ profile: 'generic-touchscreen' })
             ?? null;
+
+        // セットアップ中の await の最中にセッションが終了 (折りたたみを開く・即とじる等) して
+        // いたら、_onSessionEnd が既に走っている。半端な状態を作らずここで中断する。
+        if (this.session !== session) return;
 
         this._setupAnchor(model, initialBox);
         this._setupReticle();
@@ -347,21 +353,45 @@ export class WebXRARMode {
         const sm = this.sceneManager;
         const renderer = sm.renderer;
 
+        // --- 最優先: XRレンダリングを止めて通常ループ/カメラへ戻す ---
+        // セットアップ用の await 中にセッションが終了すると、この時点では
+        // anchor / groundMesh / reticle がまだ null のことがある。途中で例外を
+        // 投げて復元 (特にカメラ) を取りこぼさないよう、重要な復元を先に・null安全に行う。
         renderer.setAnimationLoop(null);
         renderer.xr.enabled = false;
         sm.xrSuspended = false;
         this.session = null;
+
+        // XR がカメラの姿勢と射影行列を書き換えているので元に戻す
+        if (this.saved) {
+            const cam = sm.camera;
+            cam.position.copy(this.saved.cameraPosition);
+            cam.lookAt(sm.controls.target);
+            cam.updateProjectionMatrix();
+        }
+
+        // モデルをシーン直下に戻して位置を復元 (回転・スケールは anchor 側なので破棄される)
+        if (this.targetModel?.mesh) {
+            sm.scene.add(this.targetModel.mesh);
+            if (this.saved) this.targetModel.mesh.position.copy(this.saved.meshPosition);
+            this.targetModel.mesh.updateMatrixWorld(true);
+        }
+        this.targetModel = null;
+
+        // --- ここから後始末 (どれが null でも安全に飛ばす) ---
         this.viewerHitSource?.cancel?.();
         this.viewerHitSource = null;
         this.transientHitSource?.cancel?.();
         this.transientHitSource = null;
 
         const overlay = document.getElementById('ar-overlay');
-        overlay.removeEventListener('pointerdown', this._onPointerDown);
-        overlay.removeEventListener('pointermove', this._onPointerMove);
-        overlay.removeEventListener('pointerup', this._onPointerUp);
-        overlay.removeEventListener('pointercancel', this._onPointerUp);
-        overlay.hidden = true;
+        if (overlay) {
+            overlay.removeEventListener('pointerdown', this._onPointerDown);
+            overlay.removeEventListener('pointermove', this._onPointerMove);
+            overlay.removeEventListener('pointerup', this._onPointerUp);
+            overlay.removeEventListener('pointercancel', this._onPointerUp);
+            overlay.hidden = true;
+        }
         clearTimeout(this._hintTimer);
         this.pointers.clear();
         this.placed = false;
@@ -370,36 +400,33 @@ export class WebXRARMode {
         for (const m of this.shadowedModelMeshes) m.castShadow = false;
         this.shadowedModelMeshes = [];
 
-        // モデルをシーン直下に戻して位置を復元 (回転・スケールは anchor 側なので破棄される)
-        if (this.targetModel?.mesh) {
-            sm.scene.add(this.targetModel.mesh);
-            this.targetModel.mesh.position.copy(this.saved.meshPosition);
-            this.targetModel.mesh.updateMatrixWorld(true);
+        if (this.anchor) {
+            sm.scene.remove(this.anchor);
+            this.anchor = null;
         }
-        this.targetModel = null;
-        sm.scene.remove(this.anchor);
-        this.anchor = null;
-        this.groundMesh.geometry.dispose();
-        this.groundMesh.material.dispose();
-        this.groundMesh = null;
-
-        sm.scene.remove(this.reticle);
-        this.reticle.traverse((o) => {
-            o.geometry?.dispose?.();
-            o.material?.dispose?.();
-        });
-        this.reticle = null;
+        if (this.groundMesh) {
+            this.groundMesh.geometry.dispose();
+            this.groundMesh.material.dispose();
+            this.groundMesh = null;
+        }
+        if (this.reticle) {
+            sm.scene.remove(this.reticle);
+            this.reticle.traverse((o) => {
+                o.geometry?.dispose?.();
+                o.material?.dispose?.();
+            });
+            this.reticle = null;
+        }
 
         const k = sm.keyLight;
-        k.castShadow = this.saved.keyCastShadow;
-        k.position.copy(this.saved.keyPosition);
+        if (this.saved) {
+            k.castShadow = this.saved.keyCastShadow;
+            k.position.copy(this.saved.keyPosition);
+        }
         sm.scene.remove(k.target);
-
-        // XR がカメラの姿勢と射影行列を書き換えているので元に戻す
-        const cam = sm.camera;
-        cam.position.copy(this.saved.cameraPosition);
-        cam.lookAt(sm.controls.target);
-        cam.updateProjectionMatrix();
         this.saved = null;
+
+        // お絵描き側の入力状態をリセットさせる (取りこぼしたポインタの後始末)
+        this.onEnd?.();
     }
 }

@@ -82,6 +82,7 @@ export class UI {
         this._setupMenu();
         this._setupModelOverlay();
         this._setupDriveExit();
+        this._setupMachiCamera();
         this._updateColorTriggerPreview();
         this._updateBrushTriggerPreview();
     }
@@ -91,6 +92,21 @@ export class UI {
         document.body.classList.toggle('drive-mode', active);
         const exit = document.getElementById('drive-exit');
         if (exit) exit.hidden = !active;
+    }
+
+    /** まちモード: 塗り系UIを隠し、退出ボタン + カメラ切り替えボタンを出す */
+    setMachiMode(active, cameraLabel) {
+        document.body.classList.toggle('drive-mode', active);
+        const exit = document.getElementById('drive-exit');
+        if (exit) exit.hidden = !active;
+        const camBtn = document.getElementById('machi-camera');
+        if (camBtn) camBtn.hidden = !active;
+        if (active && cameraLabel) this.setMachiCameraLabel(cameraLabel);
+    }
+
+    setMachiCameraLabel(label) {
+        const el = document.getElementById('machi-camera-label');
+        if (el) el.textContent = label;
     }
 
     getState() {
@@ -555,6 +571,10 @@ export class UI {
             dropdown.classList.remove('show');
             this.cb.onDriveToggle?.(true);
         });
+        document.getElementById('menu-machi').addEventListener('click', () => {
+            dropdown.classList.remove('show');
+            this.cb.onMachiToggle?.(true);
+        });
         document.getElementById('menu-ar').addEventListener('click', () => {
             dropdown.classList.remove('show');
             this.cb.onPlaceAR?.();
@@ -591,7 +611,17 @@ export class UI {
         const btn = document.getElementById('drive-exit');
         if (!btn) return;
         btn.addEventListener('click', () => {
-            this.cb.onDriveToggle?.(false);
+            // はしる / まち どちらのモードでも共通の退出ボタン
+            this.cb.onModeExit?.();
+        });
+    }
+
+    _setupMachiCamera() {
+        const btn = document.getElementById('machi-camera');
+        if (!btn) return;
+        btn.addEventListener('click', () => {
+            const label = this.cb.onMachiCameraCycle?.();
+            if (label) this.setMachiCameraLabel(label);
         });
     }
 
