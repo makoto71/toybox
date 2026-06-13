@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#050608" />
+  <title>つんつん じせいりゅうたい</title>
+  <style>
+    :root {
+      --fg: rgba(255, 255, 255, 0.82);
+      --glass: rgba(20, 24, 32, 0.55);
+      --stroke: rgba(255, 255, 255, 0.14);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: #050608;
+      font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+      color: var(--fg);
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #c {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: crosshair;
+    }
+
+    /* --- コントロール: 下部に浮かぶガラスのバー --- */
+    #ui {
+      position: fixed;
+      left: 50%;
+      bottom: max(18px, env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      padding: 7px;
+      border-radius: 18px;
+      background: var(--glass);
+      border: 1px solid var(--stroke);
+      backdrop-filter: blur(14px) saturate(1.2);
+      -webkit-backdrop-filter: blur(14px) saturate(1.2);
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+      z-index: 10;
+    }
+    #ui button {
+      appearance: none;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--fg);
+      font: inherit;
+      font-size: 13px;
+      letter-spacing: 0.02em;
+      padding: 10px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.18s, border-color 0.18s, transform 0.08s;
+      white-space: nowrap;
+    }
+    #ui button:hover { background: rgba(255, 255, 255, 0.13); }
+    #ui button:active { transform: scale(0.95); }
+    #ui button.on { border-color: rgba(120, 200, 255, 0.6); background: rgba(80, 160, 255, 0.18); }
+
+    /* --- タイトル(左上) --- */
+    #title {
+      position: fixed;
+      top: max(16px, env(safe-area-inset-top));
+      left: 18px;
+      z-index: 10;
+      pointer-events: none;
+    }
+    #title h1 {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      color: rgba(255, 255, 255, 0.55);
+    }
+    #title p {
+      font-size: 10.5px;
+      letter-spacing: 0.28em;
+      color: rgba(255, 255, 255, 0.28);
+      margin-top: 3px;
+    }
+
+    /* --- 中央のヒント --- */
+    #hint {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      font-size: 15px;
+      letter-spacing: 0.1em;
+      color: rgba(255, 255, 255, 0.5);
+      pointer-events: none;
+      transition: opacity 1.2s ease;
+      z-index: 5;
+    }
+    #hint .big { font-size: 19px; color: rgba(255, 255, 255, 0.7); margin-bottom: 8px; }
+    #hint.fade { opacity: 0; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <div id="title">
+    <h1>つんつん</h1>
+    <p>FERROFLUID</p>
+  </div>
+
+  <div id="hint">
+    <div class="big">画面に指でふれてみて</div>
+    <div>磁石のように 黒い流体が ツノを立てる</div>
+  </div>
+
+  <div id="ui">
+    <button id="palette">◐</button>
+    <button id="mic">🎙 音</button>
+    <button id="save">↓ 保存</button>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
