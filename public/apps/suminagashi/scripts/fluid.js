@@ -6,6 +6,7 @@ export function createFluid(canvas) {
   const PRESSURE_ITERATIONS = 24;
   const VELOCITY_DISSIPATION = 1.2; // 水面が静けさに戻る速さ。低いと渦が巻き、高いと余韻が消える
   const DYE_SHARPEN = 1.0; // にじみで薄まったアルファを戻す強さ (1/秒)。強いと細い筋が千切れる
+  const DYE_SHARPEN_GATE = 0.08; // 引き締めを流速でゲート。流速*この値=1.0 で全開、止まると0
   const PRINT_SS = 2; // かみに写すときのスーパーサンプリング倍率 (高解像度で描いて縮小=AA)
 
   const { gl, ext } = getWebGLContext(canvas);
@@ -72,16 +73,24 @@ export function createFluid(canvas) {
   // ロジスティック曲線で「濃い側は1へ、薄い側は0へ」ゆっくり寄せるだけなので、
   // 近傍参照によるノイズ増幅やギザつきが原理的に起きない。
   // rgb はプリマルチプライ済みなので、色味を保つよう同率でスケールする。
+  //
+  // 引き締めは流速でゲートする: にじみは水が動いているときだけ生じるので、
+  // 流れのある所だけ研ぐ。止まった水面では効かず、縁はその時点の柔らかさで
+  // 固定される (放置で縁が段差に潰れてジャギーになるのを防ぐ)。
   const sharpenFrag = `
     precision highp float;
     precision highp sampler2D;
     varying vec2 vUv;
     uniform sampler2D uTexture;
+    uniform sampler2D uVelocity;
     uniform float uAmount;
+    uniform float uVelGate;
     void main () {
       vec4 c = texture2D(uTexture, vUv);
       float a = clamp(c.a, 0.0, 1.0);
-      float a2 = clamp(a + uAmount * 4.0 * a * (1.0 - a) * (a - 0.5), 0.0, 1.0);
+      float gate = clamp(length(texture2D(uVelocity, vUv).xy) * uVelGate, 0.0, 1.0);
+      float amt = uAmount * gate;
+      float a2 = clamp(a + amt * 4.0 * a * (1.0 - a) * (a - 0.5), 0.0, 1.0);
       float s = a > 1e-4 ? a2 / a : 0.0;
       gl_FragColor = vec4(c.rgb * s, a2);
     }
@@ -577,10 +586,13 @@ export function createFluid(canvas) {
     blit(dye.write);
     dye.swap();
 
-    // 引き締め: にじんで薄まったアルファを戻す → 模様が白く痩せない
+    // 引き締め: にじんで薄まったアルファを戻す → 模様が白く痩せない。
+    // 流速ゲート付きなので、止まった水面では効かず縁が劣化しない
     sharpenProgram.bind();
     gl.uniform1i(sharpenProgram.uniforms.uTexture, dye.read.attach(0));
+    gl.uniform1i(sharpenProgram.uniforms.uVelocity, velocity.read.attach(1));
     gl.uniform1f(sharpenProgram.uniforms.uAmount, Math.min(DYE_SHARPEN * dt, 0.35));
+    gl.uniform1f(sharpenProgram.uniforms.uVelGate, DYE_SHARPEN_GATE);
     blit(dye.write);
     dye.swap();
   }

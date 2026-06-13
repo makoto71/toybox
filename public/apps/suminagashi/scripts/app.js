@@ -119,6 +119,7 @@ canvas.addEventListener('pointerdown', (e) => {
   hideHint();
   if (paused) return;
   try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* 合成イベント等でIDが無効な場合 */ }
+  markActivity();
   const uv = toUV(e);
   const now = performance.now();
 
@@ -180,6 +181,7 @@ canvas.addEventListener('pointermove', (e) => {
       fluid.splatVelocity(uv.x, uv.y, dx, dy, RAKE_RADIUS);
     }
     audio.swish(Math.min(speed, 8));
+    markActivity();
   }
 
   p.x = uv.x;
@@ -217,13 +219,22 @@ function updateDrops (now) {
     const color = (p.useClear || ink.a === 0) ? CLEAR : ink;
     fluid.splatDrop(p.x, p.y, dr, color);
     p.phaseR = r;
+    markActivity();
   }
 }
 
 // ---------- メインループ ----------
 
+// 水面が静まったらシミュレーションを凍結する。
+// 流速ゼロ付近でも MacCormack 移流を回し続けると、わずかな再サンプリング誤差が
+// 何百フレームも蓄積して塗りが縞状に劣化する。最後の操作から SETTLE_MS 経つと
+// step を止め、表示だけ続けて模様をその時点で固定する。
+const SETTLE_MS = 5000;
 let lastTime = performance.now();
+let lastActivity = performance.now();
 let seeded = false;
+function markActivity () { lastActivity = performance.now(); }
+
 function frame (now) {
   const dt = Math.min((now - lastTime) / 1000, 1 / 30);
   lastTime = now;
@@ -233,8 +244,11 @@ function frame (now) {
       seeded = true;
       seedDemo();
     }
-    updateDrops(now);
-    fluid.step(dt > 0 ? dt : 1 / 60);
+    // 操作中、または静まりきるまでの間だけ流体を進める
+    if (pointers.size > 0 || now - lastActivity < SETTLE_MS) {
+      updateDrops(now);
+      fluid.step(dt > 0 ? dt : 1 / 60);
+    }
     fluid.render();
   }
   audio.tick();
