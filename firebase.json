@@ -39,6 +39,14 @@
       {
         "source": "/suminagashi/**",
         "destination": "/apps/suminagashi/**"
+      },
+      {
+        "source": "/ferrofluid",
+        "destination": "/apps/ferrofluid/index.html"
+      },
+      {
+        "source": "/ferrofluid/**",
+        "destination": "/apps/ferrofluid/**"
       }
     ]
   }
