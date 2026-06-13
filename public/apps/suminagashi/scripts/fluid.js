@@ -6,6 +6,7 @@ export function createFluid(canvas) {
   const PRESSURE_ITERATIONS = 24;
   const VELOCITY_DISSIPATION = 1.2; // 水面が静けさに戻る速さ。低いと渦が巻き、高いと余韻が消える
   const DYE_SHARPEN = 1.0; // にじみで薄まったアルファを戻す強さ (1/秒)。強いと細い筋が千切れる
+  const PRINT_SS = 2; // かみに写すときのスーパーサンプリング倍率 (高解像度で描いて縮小=AA)
 
   const { gl, ext } = getWebGLContext(canvas);
 
@@ -474,7 +475,7 @@ export function createFluid(canvas) {
   const displayProgram = createProgram(displayFrag);
 
   const filter = ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST;
-  let velocity, pressure, divergence, dye, dyeTmpA, dyeTmpB, printFBO;
+  let velocity, pressure, divergence, dye, dyeTmpA, dyeTmpB, printFBO, printOut;
   let currentDyeRes = 0;
 
   // 染料解像度は描画バッファの実寸から決める (構築時に viewport が 0 でも壊れないように)
@@ -492,8 +493,14 @@ export function createFluid(canvas) {
     dye = createDoubleFBO(dyeRes.width, dyeRes.height, ext.formatRGBA.internalFormat, ext.formatRGBA.format, ext.halfFloatTexType, filter);
     dyeTmpA = createFBO(dyeRes.width, dyeRes.height, ext.formatRGBA.internalFormat, ext.formatRGBA.format, ext.halfFloatTexType, filter);
     dyeTmpB = createFBO(dyeRes.width, dyeRes.height, ext.formatRGBA.internalFormat, ext.formatRGBA.format, ext.halfFloatTexType, filter);
+    // 印刷FBOは dye 解像度の PRINT_SS 倍で描き、2D canvas 側で等倍に縮小して
+    // アンチエイリアスする。テクスチャ上限を超えないよう実効倍率をクランプ。
+    printOut = { width: dyeRes.width, height: dyeRes.height };
+    const maxTex = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE) || 4096, 4096);
+    const longDye = Math.max(dyeRes.width, dyeRes.height);
+    const ss = Math.max(1, Math.min(PRINT_SS, maxTex / longDye));
     printFBO = createFBO(
-      dyeRes.width, dyeRes.height,
+      Math.round(dyeRes.width * ss), Math.round(dyeRes.height * ss),
       ext.isWebGL2 ? gl.RGBA8 : gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR
     );
   }
@@ -648,16 +655,27 @@ export function createFluid(canvas) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, printFBO.fbo);
     gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
-    const out = document.createElement('canvas');
-    out.width = w;
-    out.height = h;
-    const ctx = out.getContext('2d');
-    const img = ctx.createImageData(w, h);
+    // スーパーサンプル画像を一旦そのまま 2D canvas へ (Y反転)
+    const ss = document.createElement('canvas');
+    ss.width = w;
+    ss.height = h;
+    const ssCtx = ss.getContext('2d');
+    const img = ssCtx.createImageData(w, h);
     const rowBytes = w * 4;
     for (let y = 0; y < h; y++) {
       img.data.set(pixels.subarray((h - 1 - y) * rowBytes, (h - y) * rowBytes), y * rowBytes);
     }
-    ctx.putImageData(img, 0, 0);
+    ssCtx.putImageData(img, 0, 0);
+
+    // 等倍へ高品質縮小 → エッジと和紙グレインがアンチエイリアスされる
+    if (w === printOut.width && h === printOut.height) return ss;
+    const out = document.createElement('canvas');
+    out.width = printOut.width;
+    out.height = printOut.height;
+    const ctx = out.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(ss, 0, 0, w, h, 0, 0, out.width, out.height);
     return out;
   }
 
