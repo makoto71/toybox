@@ -264,10 +264,12 @@ export function createFluid(canvas) {
 
     void main () {
       vec2 uv = vUv;
-      // 和紙の繊維。横長と縦長のノイズを重ねる
+      // 和紙の繊維。横長と縦長のノイズを重ねる。
+      // 最終1280px幅でも周期が4px以上になるよう高周波成分を抑える
+      // (700→320。これより高いと縮小時にモアレ=メッシュ模様が出る)
       float fiber = vnoise(uv * vec2(220.0, 36.0)) * 0.5
                   + vnoise(uv * vec2(36.0, 220.0)) * 0.3
-                  + vnoise(uv * 700.0) * 0.2;
+                  + vnoise(uv * 320.0) * 0.2;
       vec2 duv = (vec2(vnoise(uv * 160.0), vnoise(uv * 160.0 + 7.31)) - 0.5) * 0.0022 * uPaper;
       vec4 dye = texture2D(uDye, uv + duv);
       float a = clamp(dye.a, 0.0, 1.0);
@@ -282,8 +284,8 @@ export function createFluid(canvas) {
       vec3 paper = vec3(0.956, 0.933, 0.879) * (0.93 + 0.09 * fiber);
       vec3 bg = mix(water, paper, uPaper);
 
-      // 紙に写すと粒状感(にじみ)がのる
-      float grain = mix(1.0, 0.88 + 0.2 * vnoise(uv * 480.0), uPaper);
+      // 紙に写すと粒状感(にじみ)がのる。周期4px以上に保ちモアレを防ぐ (480→300)
+      float grain = mix(1.0, 0.88 + 0.2 * vnoise(uv * 300.0), uPaper);
       float aa = clamp(a * grain, 0.0, 1.0);
       vec3 inkOnBg = mix(ink, ink * (0.9 + 0.1 * fiber), uPaper);
       vec3 col = mix(bg, inkOnBg, aa);
