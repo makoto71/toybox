@@ -12,6 +12,8 @@
  *     2本指ひねり   → Y軸回転
  * - UI (もどるボタン・ヒント) は dom-overlay で表示する。
  * - セッション中は SceneManager の通常レンダループを止め、XRフレームループで描画する。
+ * - start() に subject を渡すと、currentModel の代わりに任意の Object3D を置ける
+ *   (まちモードのAR投影=裏技 がこれを使う)。
  */
 
 import * as THREE from 'three';
@@ -44,7 +46,10 @@ export class WebXRARMode {
         this.reticle = null;
         this.groundMesh = null;
         this.targetModel = null;
+        /** @type {{acquire:()=>THREE.Object3D|null, release:()=>void, bounds?:()=>THREE.Box3, onFrame?:(dt:number)=>void, desiredSize?:number}|null} */
+        this.subject = null;
         this.saved = null;
+        this._addedKeyTarget = false;
         this.shadowedModelMeshes = [];
         this.viewerHitSource = null;
         this.transientHitSource = null;
@@ -77,12 +82,21 @@ export class WebXRARMode {
 
     get active() { return !!this.session; }
 
-    async start() {
+    /**
+     * @param {object|null} subject 設置対象のカスタム指定 (省略時は currentModel を置く)。
+     *   acquire はセッション確立後に呼ばれて対象の Object3D を返し、
+     *   release はセッション終了時に必ず呼ばれる (対象を元の場所へ戻す)。
+     *   bounds で設置サイズの基準ボックスを差し替えられる (省略時は対象全体)。
+     *   onFrame はXRフレームごとに呼ばれる (まちの走行シミュレーション等)。
+     */
+    async start(subject = null) {
         if (this.active) return;
-        const model = this.sceneManager.currentModel;
-        if (!model?.mesh) return;
-        const initialBox = new THREE.Box3().setFromObject(model.mesh);
-        if (initialBox.isEmpty()) return;
+        let model = null;
+        if (!subject) {
+            model = this.sceneManager.currentModel;
+            if (!model?.mesh) return;
+            if (new THREE.Box3().setFromObject(model.mesh).isEmpty()) return;
+        }
 
         const overlay = document.getElementById('ar-overlay');
         overlay.hidden = false;
@@ -98,28 +112,49 @@ export class WebXRARMode {
             throw err;
         }
         this.session = session;
+        this.subject = subject;
         session.addEventListener('end', this._onSessionEnd);
         session.addEventListener('select', this._onSelect);
 
         const renderer = this.sceneManager.renderer;
-        this.saved = this._snapshotState();
+        this.saved = this._snapshotState(model);
+        // AR は現実のカメラ映像が背景になるので、空・フォグは外す (終了時に復元)
+        this.sceneManager.scene.background = null;
+        this.sceneManager.scene.fog = null;
         renderer.xr.enabled = true;
         renderer.xr.setReferenceSpaceType('local');
         await renderer.xr.setSession(session);
+        if (this.session !== session) return; // await中に終了 → _onSessionEnd が復元済み
         this.sceneManager.xrSuspended = true;
 
         // hit-test ソース (中央レチクル用 + 指ドラッグ用)
-        const viewerSpace = await session.requestReferenceSpace('viewer');
-        this.viewerHitSource = await session.requestHitTestSource({ space: viewerSpace });
-        this.transientHitSource =
-            await session.requestHitTestSourceForTransientInput?.({ profile: 'generic-touchscreen' })
-            ?? null;
+        try {
+            const viewerSpace = await session.requestReferenceSpace('viewer');
+            this.viewerHitSource = await session.requestHitTestSource({ space: viewerSpace });
+            this.transientHitSource =
+                await session.requestHitTestSourceForTransientInput?.({ profile: 'generic-touchscreen' })
+                ?? null;
+        } catch (err) {
+            if (this.session !== session) return; // セッション終了による失敗は無視してよい
+            throw err;
+        }
 
         // セットアップ中の await の最中にセッションが終了 (折りたたみを開く・即とじる等) して
         // いたら、_onSessionEnd が既に走っている。半端な状態を作らずここで中断する。
         if (this.session !== session) return;
 
-        this._setupAnchor(model, initialBox);
+        const object = subject ? subject.acquire() : model.mesh;
+        const box = object
+            ? (subject?.bounds?.() ?? new THREE.Box3().setFromObject(object))
+            : null;
+        if (!object || box.isEmpty()) {
+            // 設置対象が消えていた (許可ダイアログ中にまちを抜けた等) → セッションを畳む
+            this.stop();
+            return;
+        }
+
+        this.targetModel = model;
+        this._setupAnchor(object, box, subject?.desiredSize ?? DESIRED_SIZE);
         this._setupReticle();
         this._setupShadowRig();
 
@@ -143,30 +178,32 @@ export class WebXRARMode {
 
     // ---------- セットアップ ----------
 
-    _snapshotState() {
-        const cam = this.sceneManager.camera;
-        const k = this.sceneManager.keyLight;
+    _snapshotState(model) {
+        const sm = this.sceneManager;
+        const cam = sm.camera;
+        const k = sm.keyLight;
         return {
-            meshPosition: this.sceneManager.currentModel.mesh.position.clone(),
+            meshPosition: model ? model.mesh.position.clone() : null,
             cameraPosition: cam.position.clone(),
             keyCastShadow: k.castShadow,
             keyPosition: k.position.clone(),
+            background: sm.scene.background,
+            fog: sm.scene.fog,
         };
     }
 
-    _setupAnchor(model, box) {
+    _setupAnchor(object, box, desiredSize) {
         const size = new THREE.Vector3();
         box.getSize(size);
         const bottomCenter = new THREE.Vector3();
         box.getCenter(bottomCenter);
         bottomCenter.y = box.min.y;
         this._modelSize = Math.max(size.x, size.y, size.z);
-        this.baseScale = DESIRED_SIZE / this._modelSize;
+        this.baseScale = desiredSize / this._modelSize;
 
-        this.targetModel = model;
         const anchor = new THREE.Group();
-        anchor.add(model.mesh); // add が元の親 (scene) からは自動で外す
-        model.mesh.position.sub(bottomCenter);
+        anchor.add(object); // add が元の親 (scene) からは自動で外す
+        object.position.sub(bottomCenter);
         anchor.scale.setScalar(this.baseScale);
         anchor.visible = false; // タップで置くまで非表示
         this.sceneManager.scene.add(anchor);
@@ -183,12 +220,15 @@ export class WebXRARMode {
         this.groundMesh.receiveShadow = true;
         anchor.add(this.groundMesh);
 
-        model.mesh.traverse((o) => {
-            if (o.isMesh && !o.castShadow) {
-                o.castShadow = true;
-                this.shadowedModelMeshes.push(o);
-            }
-        });
+        // subject 側 (まち等) は影設定済みなので、通常モデルのみ影を付与する
+        if (!this.subject) {
+            object.traverse((o) => {
+                if (o.isMesh && !o.castShadow) {
+                    o.castShadow = true;
+                    this.shadowedModelMeshes.push(o);
+                }
+            });
+        }
     }
 
     _setupReticle() {
@@ -219,8 +259,10 @@ export class WebXRARMode {
         k.shadow.camera.far = ws * 8 + 2;
         k.shadow.bias = -0.0008;
         k.shadow.camera.updateProjectionMatrix();
+        // まちモードのように元から target がシーンに居る場合は、終了時に外さない
         if (k.target.parent !== this.sceneManager.scene) {
             this.sceneManager.scene.add(k.target);
+            this._addedKeyTarget = true;
         }
     }
 
@@ -268,6 +310,9 @@ export class WebXRARMode {
         const k = sm.keyLight;
         k.position.copy(this.anchor.position).add(this._lightOffset);
         k.target.position.copy(this.anchor.position);
+
+        // subject のシミュレーション (まちの車・信号など) を動かし続ける
+        this.subject?.onFrame?.(dt);
 
         sm.watercolorSim?.update(dt);
         sm.sandSim?.update(dt);
@@ -370,8 +415,11 @@ export class WebXRARMode {
             cam.updateProjectionMatrix();
         }
 
-        // モデルをシーン直下に戻して位置を復元 (回転・スケールは anchor 側なので破棄される)
-        if (this.targetModel?.mesh) {
+        // 設置対象をシーン直下に戻して位置を復元 (回転・スケールは anchor 側なので破棄される)
+        if (this.subject) {
+            this.subject.release();
+            this.subject = null;
+        } else if (this.targetModel?.mesh) {
             sm.scene.add(this.targetModel.mesh);
             if (this.saved) this.targetModel.mesh.position.copy(this.saved.meshPosition);
             this.targetModel.mesh.updateMatrixWorld(true);
@@ -422,8 +470,13 @@ export class WebXRARMode {
         if (this.saved) {
             k.castShadow = this.saved.keyCastShadow;
             k.position.copy(this.saved.keyPosition);
+            sm.scene.background = this.saved.background;
+            sm.scene.fog = this.saved.fog;
         }
-        sm.scene.remove(k.target);
+        if (this._addedKeyTarget) {
+            sm.scene.remove(k.target);
+            this._addedKeyTarget = false;
+        }
         this.saved = null;
 
         // お絵描き側の入力状態をリセットさせる (取りこぼしたポインタの後始末)

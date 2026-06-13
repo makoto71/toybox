@@ -48,6 +48,7 @@ export class UI {
      *   onModelChange(modelId)
      *   onSave()
      *   onClear()
+     *   onMachiAR()  // 裏技: まちメニューのタイトル3連打でまちをAR投影
      */
     constructor(callbacks) {
         this.cb = callbacks;
@@ -651,6 +652,33 @@ export class UI {
                 this.cb.onMachiTimeChange?.(card.dataset.time);
                 this._closeOverlay('machi-overlay');
             });
+        });
+
+        this._setupMachiARTrigger();
+    }
+
+    /**
+     * 裏技: まちメニューのタイトルを すばやく3回タップすると、まちをそのまま
+     * ARに投影する。子供がメニューを普通に使う分には踏まない隠しコマンド。
+     * requestSession はユーザー操作起点が要るので、3回目の click から同期的に発火する。
+     */
+    _setupMachiARTrigger() {
+        const title = document.getElementById('machi-overlay-title');
+        if (!title) return;
+        const NEED = 3;
+        const RESET_MS = 800; // この間隔を超えたらカウントをリセット
+        let count = 0;
+        let timer = 0;
+        title.addEventListener('click', () => {
+            count += 1;
+            clearTimeout(timer);
+            timer = setTimeout(() => { count = 0; }, RESET_MS);
+            if (count < NEED) return;
+            count = 0;
+            clearTimeout(timer);
+            navigator.vibrate?.(30);
+            this._closeOverlay('machi-overlay');
+            this.cb.onMachiAR?.();
         });
     }
 

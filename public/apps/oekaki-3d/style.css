@@ -91,6 +91,12 @@ body.drive-mode .size-slider-wrap {
 .machi-camera[hidden] {
     display: none;
 }
+/* 裏技 (タイトル3連打AR) で文字選択・長押しコールアウトが出ないように */
+#machi-overlay-title {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+}
 .machi-camera:active {
     transform: translate(-50%, 2px);
     box-shadow: var(--btn-active-shadow);

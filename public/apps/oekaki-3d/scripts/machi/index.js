@@ -8,6 +8,8 @@
  *   ピクセル比) をすべて保存し、終了時に復元する
  * - モデルは rig(位置+ヨー) → tilt(ピッチ/ロール/バウンス) の2段グループに
  *   再ペアレントして運転する
+ * - 裏技: beginAR/updateAR/endAR で街全体を WebXRARMode に貸し出し、
+ *   そのままARに投影できる (まちメニューのタイトル3連打で発動)
  */
 
 import * as THREE from 'three';
@@ -168,19 +170,9 @@ export class MachiMode {
         });
 
         // ---- ライティング: シャドウ設定 (強度・色は時間帯プリセットが決める) ----
-        const k = sm.keyLight;
-        k.castShadow = true;
-        k.shadow.mapSize.set(1024, 1024);
-        k.shadow.camera.left = -18;
-        k.shadow.camera.right = 18;
-        k.shadow.camera.top = 18;
-        k.shadow.camera.bottom = -18;
-        k.shadow.camera.near = 2;
-        k.shadow.camera.far = 80;
-        k.shadow.bias = -0.0015;
-        k.shadow.camera.updateProjectionMatrix();
+        this._setupSunShadow();
         sm.scene.add(this._sunTarget);
-        k.target = this._sunTarget;
+        sm.keyLight.target = this._sunTarget;
 
         // ---- 描画設定 ----
         sm.camera.far = 160;
@@ -328,8 +320,80 @@ export class MachiMode {
         return this.director ? this.director.cycle() : 'ついせき';
     }
 
+    // ---------- AR投影 (裏技) ----------
+
+    /**
+     * 街・自車・NPCをひとまとめのグループにして返す (WebXRARMode の設置対象用)。
+     * グループはシーンから外れて anchor 配下に置かれるので、終了時は必ず
+     * endAR() でシーン直下へ戻すこと。まちモードでないときは null。
+     */
+    beginAR() {
+        if (!this.city) return null;
+        const g = new THREE.Group();
+        g.add(this.city.group, this.rig, this.fleetGroup);
+        return g;
+    }
+
+    /**
+     * AR設置サイズの基準ボックス。街全体のバウンディングは広大な草地ベースに
+     * 支配されるので、市街地 (道路網の範囲) を基準にする。
+     */
+    arBounds() {
+        const r = this.city.graph.roadEnd;
+        return new THREE.Box3(
+            new THREE.Vector3(-r, 0, -r),
+            new THREE.Vector3(r, 14, r),
+        );
+    }
+
+    /** AR中の毎フレーム更新。カメラと太陽はAR側が管理するので世界だけ動かす */
+    updateAR(dt) {
+        if (!this.city || dt <= 0) return;
+        this._updateWorld(dt);
+    }
+
+    /** AR終了時: 構成物をシーン直下へ戻し、ARが書き換えた影カメラを再設定する */
+    endAR() {
+        if (!this.city) return;
+        const sm = this.sceneManager;
+        sm.scene.add(this.city.group, this.rig, this.fleetGroup);
+        this._setupSunShadow();
+    }
+
+    // ---------- 毎フレーム更新 ----------
+
+    /** キーライト(太陽)の影カメラをまち用に設定する (開始時とAR復帰時) */
+    _setupSunShadow() {
+        const k = this.sceneManager.keyLight;
+        k.castShadow = true;
+        k.shadow.mapSize.set(1024, 1024);
+        k.shadow.camera.left = -18;
+        k.shadow.camera.right = 18;
+        k.shadow.camera.top = 18;
+        k.shadow.camera.bottom = -18;
+        k.shadow.camera.near = 2;
+        k.shadow.camera.far = 80;
+        k.shadow.bias = -0.0015;
+        k.shadow.camera.updateProjectionMatrix();
+    }
+
     _update(dt) {
         if (!this.city || dt <= 0) return;
+        this._updateWorld(dt);
+
+        // 太陽 (シャドウカメラ) を車に追従させる
+        this._sunTarget.position.copy(this.driver.pos);
+        this.sceneManager.keyLight.position.copy(this.driver.pos).add(this._sunOffset);
+
+        // カメラ
+        this._carState.pos = this.driver.pos;
+        this._carState.tangent = this.driver.tangent;
+        this._carState.v = this.driver.v;
+        this.director.update(dt, this._carState);
+    }
+
+    /** 世界 (信号・自車・NPC・車体姿勢) のシミュレーション。通常表示とARで共有 */
+    _updateWorld(dt) {
         this.elapsed += dt;
         const t = this.elapsed;
 
@@ -355,15 +419,5 @@ export class MachiMode {
 
         // ホイール回転
         spinWheels(this.wheels, this.driver.dist);
-
-        // 太陽 (シャドウカメラ) を車に追従させる
-        this._sunTarget.position.copy(this.driver.pos);
-        this.sceneManager.keyLight.position.copy(this.driver.pos).add(this._sunOffset);
-
-        // カメラ
-        this._carState.pos = this.driver.pos;
-        this._carState.tangent = this.driver.tangent;
-        this._carState.v = this.driver.v;
-        this.director.update(dt, this._carState);
     }
 }

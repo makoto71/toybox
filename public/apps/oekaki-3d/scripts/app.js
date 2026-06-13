@@ -95,6 +95,30 @@ document.addEventListener('DOMContentLoaded', () => {
         onMachiTimeChange(id) {
             machi.setTimeOfDay(id);
         },
+        // 裏技: まちメニューのタイトル3連打で、まちをそのままARに投影する
+        async onMachiAR() {
+            if (!machi.active || arBusy || webxrAR.active) return;
+            if (!webxrARSupported) {
+                alert('ごめんね、このたんまつでは つかえないよ');
+                return;
+            }
+            arBusy = true;
+            try {
+                await webxrAR.start({
+                    desiredSize: 1.0, // 市街地の一辺の初期実寸 (m) — ピンチで変えられる
+                    acquire: () => machi.beginAR(),
+                    release: () => machi.endAR(),
+                    bounds: () => machi.arBounds(),
+                    onFrame: (dt) => machi.updateAR(dt),
+                });
+            } catch (err) {
+                console.error('Machi AR failed:', err);
+                machi.endAR(); // acquire 済みでも未了でも安全に戻せる
+                alert('ごめんね、ARをはじめられなかったよ');
+            } finally {
+                arBusy = false;
+            }
+        },
         onModeExit() {
             if (machi.active) {
                 machi.stop();
@@ -140,6 +164,9 @@ document.addEventListener('DOMContentLoaded', () => {
     painter = new Painter(scene.renderer.domElement, scene, () => ui.getState());
     painter.bind();
 
-    // AR セッション終了時 (もどるボタン / OSの自動終了どちらも) にお絵描きへ復帰する
-    webxrAR.onEnd = () => painter.setPaintEnabled(true);
+    // AR セッション終了時 (もどるボタン / OSの自動終了どちらも) にお絵描きへ復帰する。
+    // まちAR (裏技) からの復帰先はまちモードなので、描画は止めたままにする
+    webxrAR.onEnd = () => {
+        if (!machi.active && !drive.active) painter.setPaintEnabled(true);
+    };
 });
