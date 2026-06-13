@@ -193,6 +193,9 @@ function release (e) {
 }
 canvas.addEventListener('pointerup', release);
 canvas.addEventListener('pointercancel', release);
+// タッチ端末で canvas のキャプチャ外へ逃げた up も拾い、幽霊ポインタを残さない
+window.addEventListener('pointerup', release);
+window.addEventListener('pointercancel', release);
 window.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // しずくの注入はフレームごとに行う (押している間ふくらみ続ける)
@@ -244,8 +247,11 @@ function frame (now) {
       seeded = true;
       seedDemo();
     }
-    // 操作中、または静まりきるまでの間だけ流体を進める
-    if (pointers.size > 0 || now - lastActivity < SETTLE_MS) {
+    // 最後の操作から SETTLE_MS の間だけ流体を進める。指で操作中は
+    // updateDrops / pointermove が markActivity を呼ぶので動き続ける。
+    // pointers.size に依存させないのは、タッチ端末で pointerup を取りこぼして
+    // 幽霊ポインタが残ると凍結できず、放置で模様が縞状に劣化するため。
+    if (now - lastActivity < SETTLE_MS) {
       updateDrops(now);
       fluid.step(dt > 0 ? dt : 1 / 60);
     }
