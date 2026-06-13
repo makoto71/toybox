@@ -203,6 +203,11 @@ export function createFluid(canvas) {
 
   // 伝統的マーブリングのしずく変換: 既存の模様を |P'|^2 = |P|^2 + r^2 で外側へ
   // 押し出し、中心に新しいインクを置く。面積保存なので輪が正確に再現される。
+  //
+  // ただし変位は数半径で滑らかに 0 へ落とす (局所マーブリング)。元の変換は遠方も
+  // r^2/(2d) だけずらすため、しずくの度に画面全体がバイリニア再サンプリングされて
+  // 少しずつボケる。遠方を「自分のテクセルそのまま (変位0=ボケなし)」にすることで、
+  // 周辺に飾りを足しても遠い中心はくっきり保たれる。影響半径は r に比例。
   const dropFrag = `
     precision highp float;
     precision highp sampler2D;
@@ -219,8 +224,11 @@ export function createFluid(canvas) {
       float d = length(p);
       float r = uRadius;
       float srcD = sqrt(max(d * d - r * r, 0.0));
+      // 変位 (srcD - d) を近傍では満額、遠方では 0 に。0 なら srcP=p で恒等サンプル
+      float falloff = 1.0 - smoothstep(r * 3.0, r * 7.0, d);
+      float srcDeff = mix(d, srcD, falloff);
       vec2 dir = p / max(d, 1e-6);
-      vec2 srcP = dir * srcD;
+      vec2 srcP = dir * srcDeff;
       srcP.x /= uAspect;
       vec4 displaced = texture2D(uTarget, uPoint + srcP);
       float m = 1.0 - smoothstep(r - uEdge, r + uEdge, d);
