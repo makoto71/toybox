@@ -25,6 +25,11 @@ function App() {
           <h2>カメラAR</h2>
         </a>
 
+        <a href="/apps/suminagashi/index.html" className="app-card suminagashi-card">
+          <div className="app-icon">🌊</div>
+          <h2>すみながし</h2>
+        </a>
+
         {/* 今後アプリが増えたらここに追加 */}
         <div className="app-card coming-soon">
           <div className="app-icon">?</div>

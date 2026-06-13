@@ -80,6 +80,14 @@ body {
   background-color: #E6F8F5;
 }
 
+.suminagashi-card {
+  border-color: #2B2D42;
+}
+
+.suminagashi-card:hover {
+  background-color: #F0F2F0;
+}
+
 .app-icon {
   font-size: 5rem;
   margin-bottom: 1rem;

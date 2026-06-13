@@ -31,6 +31,14 @@
       {
         "source": "/oekaki-3d/**",
         "destination": "/apps/oekaki-3d/**"
+      },
+      {
+        "source": "/suminagashi",
+        "destination": "/apps/suminagashi/index.html"
+      },
+      {
+        "source": "/suminagashi/**",
+        "destination": "/apps/suminagashi/**"
       }
     ]
   }

@@ -1,0 +1,239 @@
+/* すみながし — 静かな和の佇まい */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #e8ebe9;
+  font-family: "Hiragino Maru Gothic ProN", "BIZ UDGothic", "Yu Gothic", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#water {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+/* 縦書きのタイトル。そっと佇む */
+.title {
+  position: fixed;
+  top: max(18px, env(safe-area-inset-top));
+  left: 18px;
+  margin: 0;
+  writing-mode: vertical-rl;
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: 0.45em;
+  color: rgba(43, 45, 48, 0.5);
+  pointer-events: none;
+}
+
+#hint {
+  position: fixed;
+  left: 50%;
+  top: 15%;
+  width: 90%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: 15px;
+  line-height: 2;
+  letter-spacing: 0.15em;
+  color: rgba(43, 45, 48, 0.55);
+  pointer-events: none;
+  transition: opacity 1.2s ease;
+}
+#hint span { font-size: 12px; color: rgba(43, 45, 48, 0.4); }
+#hint.hidden { opacity: 0; }
+
+/* ---------- ツールバー ---------- */
+
+.toolbar {
+  position: fixed;
+  left: 50%;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: 26px;
+  background: rgba(252, 252, 250, 0.78);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 6px 24px rgba(40, 50, 50, 0.14);
+  max-width: calc(100vw - 16px);
+}
+
+.toolbar button {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 4px 6px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  color: #4a4d50;
+  border-radius: 14px;
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+.toolbar button:active { transform: scale(0.92); }
+.toolbar button.active { background: rgba(70, 80, 80, 0.1); }
+
+.toolbar .lbl {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: rgba(43, 45, 48, 0.6);
+  white-space: nowrap;
+}
+
+.toolbar .sep {
+  width: 1px;
+  height: 30px;
+  background: rgba(43, 45, 48, 0.12);
+  margin: 0 4px;
+}
+
+/* いろボタン */
+.ink .dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  box-shadow: inset 0 -2px 4px rgba(255, 255, 255, 0.25), 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+.ink.sumi .dot { background: #25262a; }
+.ink.ai .dot { background: #28436e; }
+.ink.shu .dot { background: #c4422c; }
+.ink.kogane .dot { background: #c09421; }
+.ink.matsu .dot { background: #2f6243; }
+.ink.fuji .dot { background: #6e5a9e; }
+.ink.mizu .dot {
+  background: linear-gradient(150deg, #eef5f5, #cfe3e3);
+  border: 1.5px solid rgba(120, 160, 160, 0.55);
+}
+.ink.active .dot { outline: 2.5px solid rgba(43, 45, 48, 0.5); outline-offset: 2.5px; }
+
+/* どうぐボタン */
+.tool svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+.tool.paper { color: #7a5c3e; }
+#btn-sound.muted .wave { display: none; }
+#btn-sound.muted { opacity: 0.45; }
+
+/* 狭い画面ではツールバーを詰める */
+@media (max-width: 540px) {
+  .toolbar { gap: 0; padding: 6px 6px; }
+  .toolbar button { padding: 4px 3px; }
+  .ink .dot, .tool svg { width: 21px; height: 21px; }
+  .toolbar .sep { margin: 0 2px; }
+  .toolbar .lbl { font-size: 8px; letter-spacing: 0.02em; }
+}
+@media (max-width: 410px) {
+  .toolbar button { padding: 4px 2px; }
+  .ink .dot, .tool svg { width: 19px; height: 19px; }
+  .toolbar .sep { margin: 0 1px; }
+  .toolbar .lbl { font-size: 7px; letter-spacing: 0; }
+}
+
+/* ---------- かみをのせる演出 ---------- */
+
+#paper-wipe {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(255, 252, 244, 0.9), rgba(244, 238, 224, 0.96)),
+    repeating-linear-gradient(92deg, rgba(180, 170, 150, 0.05) 0 2px, transparent 2px 7px);
+  transform: translateY(-102%);
+}
+#paper-wipe.sweep {
+  animation: sweep 0.78s cubic-bezier(0.6, 0, 0.3, 1) forwards;
+}
+@keyframes sweep {
+  from { transform: translateY(-102%); }
+  to { transform: translateY(0); }
+}
+
+/* ---------- 写しとった紙のモーダル ---------- */
+
+#print-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(50, 54, 52, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.45s ease;
+  z-index: 10;
+}
+#print-modal.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.print-sheet {
+  background: #faf6ec;
+  padding: 14px 14px 18px;
+  border-radius: 4px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  max-width: min(86vw, 460px);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateY(14px) rotate(-0.6deg);
+  transition: transform 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+#print-modal.open .print-sheet { transform: translateY(0) rotate(-0.6deg); }
+
+#print-img {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  border: 1px solid rgba(120, 110, 90, 0.25);
+}
+
+.print-caption {
+  margin: 12px 0 10px;
+  font-size: 13px;
+  letter-spacing: 0.25em;
+  color: rgba(80, 70, 55, 0.75);
+}
+
+.print-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+.print-actions button {
+  appearance: none;
+  border: 1.5px solid rgba(80, 70, 55, 0.4);
+  background: none;
+  border-radius: 20px;
+  padding: 8px 20px;
+  font-size: 14px;
+  letter-spacing: 0.15em;
+  color: #4f4536;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+.print-actions button:active { transform: scale(0.95); }
+#btn-save { background: rgba(80, 70, 55, 0.08); }
+#btn-cancel { border-color: rgba(80, 70, 55, 0.22); color: rgba(79, 69, 54, 0.65); }
